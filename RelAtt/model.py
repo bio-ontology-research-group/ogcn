@@ -6,7 +6,7 @@ import dgl.function as fn
 from functools import partial
 
 import logging
-logging.basicConfig(level=logging.INFO)
+#logging.basicConfig(level=logging.DEBUG)
 
 class RelAttLayer(nn.Module):
     def __init__(self, in_dim, out_dim, num_rels, num_bases=-1, bias=None,
@@ -54,12 +54,36 @@ class RelAttLayer(nn.Module):
 
     def edge_attention(self, edges):
 
-        h_src = edges.src['h']
-        z_src = self.shared_weight(h_src)
-        h_dst = edges.dst['h']
-        z_dst = self.shared_weight(h_dst)
-        he = edges.data['h']
+        if self.num_bases < self.num_rels:
+            # generate all weights from bases (equation (3))
+            weight = self.weight.view(self.in_dim, self.num_bases, self.out_dim)
+            weight = torch.matmul(self.w_comp, weight).view(self.num_rels,
+                                                        self.in_dim, self.out_dim)
+        else:
+            weight = self.weight
+
+        if self.is_input_layer:
+            embed = weight.view(-1, self.out_dim)
+            index_src = edges.data['rel_type'] * self.in_dim + edges.src['id']
+            index_dst = edges.data['rel_type'] * self.in_dim + edges.dst['id']
+             
+            h_src = embed[index_src]
+            z_src = self.shared_weight(h_src)
+            h_dst = embed[index_dst]
+            z_dst = self.shared_weight(h_dst)
+            he = edges.data['feat']
+        else:
+            h_src = edges.src['h']
+            z_src = self.shared_weight(h_src)
+            h_dst = edges.dst['h']
+            z_dst = self.shared_weight(h_dst)
+            he = edges.data['h']
+        logging.debug("shared weight dims: " + str(self.in_dim) + ", " + str(self.out_dim))
+        logging.debug("embeddings dims: " + str(he.shape))
+
         ze = self.shared_weight(he)
+
+
         
         edges.src['z'] = z_src
         edges.dst['z'] = z_dst
@@ -74,6 +98,7 @@ class RelAttLayer(nn.Module):
 
     def forward(self, g):
 
+        logging.debug("In layer forward")
         
 
 
@@ -102,9 +127,7 @@ class RelAttLayer(nn.Module):
             def message_func(edges):
                 w = weight[edges.data['rel_type']]
                 msg = torch.bmm(edges.src['h'].unsqueeze(1), w).squeeze()
-                attention = self.edge_attention(edges)
-                edges.data['norm'] = attention
-                msg = msg * edges.data['norm']
+                msg = msg * edges.data['e']
                 return {'msg': msg}
 
         def apply_func(nodes):
@@ -175,6 +198,7 @@ class Model(nn.Module):
                          activation=partial(F.softmax, dim=1))
 
     def forward(self, g):
+        logging.debug("In model forward")
         if self.features is not None:
             g.ndata['id'] = self.features
         for layer in self.layers:
@@ -211,11 +235,17 @@ labels = torch.from_numpy(labels).view(-1)
 h_n = torch.arange(data.num_nodes * data.num_nodes).type(torch.FloatTensor)
 h_n = h_n.view(data.num_nodes, data.num_nodes)
 
-h_e = torch.arange(num_edges* data.num_nodes).type(torch.FloatTensor)
-h_e = h_e.view(num_edges, data.num_nodes)
+#h_e = torch.arange(num_edges* data.num_nodes).type(torch.FloatTensor)
+#h_e = h_e.view(num_edges, data.num_nodes)
+
+h_e = torch.arange(num_rels* data.num_nodes).type(torch.FloatTensor)
+h_e = h_e.view(num_rels, data.num_nodes)
 
 
-logging.debug("h_rel " + str(h_n.shape))
+    
+
+
+logging.debug("h_nodes " + str(h_n.shape))
 logging.debug("h_rel " + str(h_e.shape))
 
 ###############################################################################
@@ -232,8 +262,16 @@ l2norm = 0 # L2 norm coefficient
 
 # create graph
 g = DGLGraph((data.edge_src, data.edge_dst))
-g.ndata['h'] = h_n
-g.edata.update({'rel_type': edge_type, 'norm': edge_norm, 'h': h_e})
+#g.ndata['feat'] = h_n
+g.edata.update({'rel_type': edge_type, 'norm': edge_norm})
+
+set_types = list(set(data.edge_type))
+for i in range(len(set_types)):
+    curr_type = set_types[i]
+
+    logging.debug("he " + str(h_e[i].shape))
+    g.edges[curr_type].data['feat'] = torch.unsqueeze(h_e[i],0)
+
 
 # create model
 model = Model(len(g),
@@ -254,6 +292,7 @@ print("start training...")
 model.train()
 for epoch in range(n_epochs):
     optimizer.zero_grad()
+
     logits = model.forward(g)
     loss = F.cross_entropy(logits[train_idx], labels[train_idx])
     loss.backward()

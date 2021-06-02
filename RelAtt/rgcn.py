@@ -321,6 +321,7 @@ print("start training...")
 model.train()
 for epoch in range(n_epochs):
     optimizer.zero_grad()
+    
     logits = model.forward(g)
     loss = F.cross_entropy(logits[train_idx], labels[train_idx])
     loss.backward()
