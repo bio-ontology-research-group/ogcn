@@ -19,27 +19,47 @@ import random
 # from dgl.data.knowledge_graph import load_data
 from dgl.contrib.data import load_data
 
-from dgl.nn.pytorch import RelGraphConv
+from relGraphConv import RelGraphConv
 
 import logging
 
-#logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
 
-from model import BaseRGCN
+from baseRGCN import BaseRGCN
 
 import utils
 
-class EmbeddingLayer(nn.Module):
-    def __init__(self, num_nodes, h_dim):
-        super(EmbeddingLayer, self).__init__()
-        self.embedding = torch.nn.Embedding(num_nodes, h_dim)
 
-    def forward(self, g, h, r, norm):
-        return self.embedding(h.squeeze())
+class EmbeddingLayer(nn.Module):
+    def __init__(self, num_nodes, num_rels, h_dim):
+        super(EmbeddingLayer, self).__init__()
+        self.n_embedding = torch.nn.Embedding(num_nodes, h_dim)
+        self.e_embedding = torch.nn.Embedding(num_rels, h_dim)
+        self.num_nodes = num_nodes
+        self.num_rels = num_rels
+
+    def forward(self, g, hn, r, he, norm):
+
+        logging.debug("Embedding HN: " + str(hn.shape) + "  " + str(self.num_nodes))
+        logging.debug("Embedding HE: " + str(he.shape) + "  " + str(self.num_rels))
+        return self.n_embedding(hn.squeeze()), self.e_embedding(he.squeeze())
+
+
+# class EmbeddingLayer(nn.Module):
+#     def __init__(self, num_nodes, num_rels, h_dim):
+#         super(EmbeddingLayer, self).__init__()
+#         self.n_embedding = torch.nn.Embedding(num_nodes, h_dim)
+#         self.e_embedding = torch.nn.Embedding(num_rels, h_dim)
+
+#     def forward(self, g, hn, r, he, norm):
+
+#         logging.debug("Embedding HN: " + str(hn.shape))
+#         logging.debug("Embedding HE: " + str(he.shape))
+#         return self.n_embedding(hn.squeeze()), self.e_embedding(he.squeeze())
 
 class RGCN(BaseRGCN):
     def build_input_layer(self):
-        return EmbeddingLayer(self.num_nodes, self.h_dim)
+        return EmbeddingLayer(self.num_nodes, self.num_rels, self.h_dim)
 
     def build_hidden_layer(self, idx):
         act = F.relu if idx < self.num_hidden_layers - 1 else None
@@ -66,8 +86,12 @@ class LinkPredict(nn.Module):
         score = torch.sum(s * r * o, dim=1)
         return score
 
-    def forward(self, g, h, r, norm):
-        return self.rgcn.forward(g, h, r, norm)
+    def forward(self, g, h, r, he, norm):
+        
+        logging.debug("Link predict HN: " + str(h.shape))
+        logging.debug("Link predict HE: " + str(he.shape))
+
+        return self.rgcn.forward(g, h, r, he, norm)
 
     def regularization_loss(self, embedding):
         return torch.mean(embedding.pow(2)) + torch.mean(self.w_relation.pow(2))
@@ -95,6 +119,8 @@ def main(args):
     valid_data = data.valid
     test_data = data.test
     num_rels = data.num_rels
+
+    logging.debug("Num rels: " + str(num_rels))
 
     # check cuda
     use_cuda = args.gpu >= 0 and torch.cuda.is_available()
@@ -159,6 +185,7 @@ def main(args):
 
         # set node/edge feature
         node_id = torch.from_numpy(node_id).view(-1, 1).long()
+        edge_feat = torch.from_numpy(edge_type).view(-1, 1).long()
         edge_type = torch.from_numpy(edge_type)
 
         logging.debug("Node id: " + str(node_id.shape))
@@ -179,7 +206,10 @@ def main(args):
             g = g.to(args.gpu)
 
         t0 = time.time()
-        embed = model(g, node_id, edge_type, edge_norm)
+        logging.debug("Node id: "   + str(type(node_id)) + "   " + str(node_id.shape))
+        logging.debug("Edge type: " + str(type(edge_feat)) + "   " + str(edge_feat.shape))
+
+        embed, e_embed = model(g, node_id, edge_type, edge_feat, edge_norm)
         loss = model.get_loss(g, embed, data, labels)
         t1 = time.time()
         loss.backward()
