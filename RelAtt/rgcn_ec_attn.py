@@ -22,23 +22,24 @@ import logging
 
 from baseRGCN import BaseRGCN
 
+from rgcn_lp_attn import EmbeddingLayer
 
-logging.basicConfig(level=logging.DEBUG)
+#logging.basicConfig(level=logging.DEBUG)
 
 
-class EmbeddingLayer(nn.Module):
-    def __init__(self, num_nodes, num_rels, h_dim):
-        super(EmbeddingLayer, self).__init__()
-        self.n_embedding = torch.nn.Embedding(num_nodes, h_dim)
-        self.e_embedding = torch.nn.Embedding(num_rels, h_dim)
-        self.num_nodes = num_nodes
-        self.num_rels = num_rels
+# class EmbeddingLayer(nn.Module):
+#     def __init__(self, num_nodes, num_rels, h_dim):
+#         super(EmbeddingLayer, self).__init__()
+#         self.n_embedding = torch.nn.Embedding(num_nodes, h_dim)
+#         self.e_embedding = torch.nn.Embedding(num_rels, h_dim)
+#         self.num_nodes = num_nodes
+#         self.num_rels = num_rels
 
-    def forward(self, g, hn, r, he, norm):
+#     def forward(self, g, hn, r, he, norm):
 
-        logging.debug("Embedding HN: " + str(hn.shape) + "  " + str(self.num_nodes))
-        logging.debug("Embedding HE: " + str(he.shape) + "  " + str(self.num_rels))
-        return self.n_embedding(hn.squeeze()), self.e_embedding(he.squeeze())
+#         logging.debug("Embedding HN: " + str(hn.shape) + "  " + str(self.num_nodes))
+#         logging.debug("Embedding HE: " + str(he.shape) + "  " + str(self.num_rels))
+#         return self.n_embedding(hn.squeeze()), self.e_embedding(he.squeeze())
 
 
 class EntityClassify(BaseRGCN):
@@ -49,7 +50,7 @@ class EntityClassify(BaseRGCN):
         return features
 
     def build_input_layer(self):
-        return EmbeddingLayer(self.num_nodes, self.num_rels, self.h_dim)
+        return EmbeddingLayer(self.num_nodes, self.num_rels, self.num_edges, self.h_dim)
     # def build_input_layer(self):
     #     return RelGraphConv(self.num_nodes, self.h_dim, self.num_rels, "basis",
     #             self.num_bases, activation=F.relu, self_loop=self.use_self_loop,
@@ -143,6 +144,7 @@ def main(args):
                            args.n_hidden,
                            num_classes,
                            num_rels,
+                           num_edges,
                            num_bases=args.n_bases,
                            num_hidden_layers=args.n_layers - 2,
                            dropout=args.dropout,
@@ -164,7 +166,7 @@ def main(args):
     for epoch in range(args.n_epochs):
         optimizer.zero_grad()
         t0 = time.time()
-        logits = model(g, feats, edge_type, edge_feat, edge_norm)
+        logits, e_logits = model(g, feats, edge_type, edge_feat, edge_norm)
         logits = logits[target_idx]
         loss = F.cross_entropy(logits[train_idx], labels[train_idx])
         t1 = time.time()
@@ -184,7 +186,7 @@ def main(args):
     print()
 
     model.eval()
-    logits = model.forward(g, feats, edge_type, edge_norm)
+    logits, e_logits = model.forward(g, feats, edge_type, edge_feat, edge_norm)
     logits = logits[target_idx]
     test_loss = F.cross_entropy(logits[test_idx], labels[test_idx])
     test_acc = torch.sum(logits[test_idx].argmax(dim=1) == labels[test_idx]).item() / len(test_idx)

@@ -11,7 +11,7 @@ from dgl.base import DGLError
 from dgl import edge_subgraph
 
 import logging
-logging.basicConfig(level=logging.DEBUG)
+#logging.basicConfig(level=logging.DEBUG)
 
 
 
@@ -141,10 +141,11 @@ class RelGraphConv(nn.Module):
         self.low_mem = low_mem
         self.layer_norm = layer_norm
 
+        logging.debug("In feat: " + str(in_feat) + "\tOut feat: " + str(out_feat))
 
         #####
         self.shared =   nn.Linear(self.in_feat, self.out_feat, bias=False)
-        self.attn_vec = nn.Linear(3*self.in_feat, 1, bias=False)
+        self.attn_vec = nn.Linear(3*self.out_feat, 1, bias=False)
         gain = nn.init.calculate_gain('relu')
         nn.init.xavier_normal_(self.shared.weight, gain=gain)
         nn.init.xavier_normal_(self.attn_vec.weight, gain=gain)
@@ -201,6 +202,7 @@ class RelGraphConv(nn.Module):
 
     def edge_attention(self, edges):
         z2 = th.cat([edges.src['z'], edges.data['z'], edges.dst['z']], dim=1)
+        logging.debug("Z2: " + str(z2.shape))
         a = self.attn_vec(z2)
         return {'norm': F.softmax(a)}
 

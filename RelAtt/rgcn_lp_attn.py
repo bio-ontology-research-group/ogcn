@@ -23,7 +23,7 @@ from relGraphConv import RelGraphConv
 
 import logging
 
-logging.basicConfig(level=logging.DEBUG)
+#logging.basicConfig(level=logging.DEBUG)
 
 from baseRGCN import BaseRGCN
 
@@ -31,17 +31,22 @@ import utils
 
 
 class EmbeddingLayer(nn.Module):
-    def __init__(self, num_nodes, num_rels, h_dim):
+    def __init__(self, num_nodes, num_rels, num_edges, h_dim):
         super(EmbeddingLayer, self).__init__()
         self.n_embedding = torch.nn.Embedding(num_nodes, h_dim)
-        self.e_embedding = torch.nn.Embedding(num_rels, h_dim)
+        self.e_embedding = torch.nn.Embedding(num_edges, h_dim)
         self.num_nodes = num_nodes
         self.num_rels = num_rels
+        self.num_edges = num_edges
+        self.h_dim = h_dim
 
     def forward(self, g, hn, r, he, norm):
 
-        logging.debug("Embedding HN: " + str(hn.shape) + "  " + str(self.num_nodes))
-        logging.debug("Embedding HE: " + str(he.shape) + "  " + str(self.num_rels))
+        logging.debug("Embedding HN: " + str(hn.shape) + "  " + str(self.num_nodes) + "  " + str(self.h_dim))
+        logging.debug("Embedding HE: " + str(he.shape) + "  " + str(self.num_edges))
+        logging.debug("Embedding HN: " + str(self.n_embedding(hn.squeeze()).shape) + "  " + str(self.num_nodes))
+        logging.debug("Squeeze HE: " + str(he.squeeze().shape))
+        logging.debug("Embedding HE: " + str(self.e_embedding(he.squeeze()).shape) + "  " + str(self.num_edges))
         return self.n_embedding(hn.squeeze()), self.e_embedding(he.squeeze())
 
 
@@ -59,7 +64,7 @@ class EmbeddingLayer(nn.Module):
 
 class RGCN(BaseRGCN):
     def build_input_layer(self):
-        return EmbeddingLayer(self.num_nodes, self.num_rels, self.h_dim)
+        return EmbeddingLayer(self.num_nodes, self.num_rels, self.num_edges,self.h_dim)
 
     def build_hidden_layer(self, idx):
         act = F.relu if idx < self.num_hidden_layers - 1 else None
@@ -68,10 +73,10 @@ class RGCN(BaseRGCN):
                 dropout=self.dropout)
 
 class LinkPredict(nn.Module):
-    def __init__(self, in_dim, h_dim, num_rels, num_bases=-1,
+    def __init__(self, in_dim, h_dim, num_rels, num_edges,num_bases=-1,
                  num_hidden_layers=1, dropout=0, use_cuda=False, reg_param=0):
         super(LinkPredict, self).__init__()
-        self.rgcn = RGCN(in_dim, h_dim, h_dim, num_rels * 2, num_bases,
+        self.rgcn = RGCN(in_dim, h_dim, h_dim, num_rels * 2, num_edges*2, num_bases,
                          num_hidden_layers, dropout, use_cuda)
         self.reg_param = reg_param
         self.w_relation = nn.Parameter(torch.Tensor(num_rels, h_dim))
@@ -116,6 +121,7 @@ def main(args):
     data = load_data(args.dataset)
     num_nodes = data.num_nodes
     train_data = data.train
+    num_edges = len(train_data)
     valid_data = data.valid
     test_data = data.test
     num_rels = data.num_rels
@@ -131,6 +137,7 @@ def main(args):
     model = LinkPredict(num_nodes,
                         args.n_hidden,
                         num_rels,
+                        num_edges,
                         num_bases=args.n_bases,
                         num_hidden_layers=args.n_layers,
                         dropout=args.dropout,
@@ -148,6 +155,8 @@ def main(args):
                 range(test_graph.number_of_nodes())).float().view(-1,1)
     test_node_id = torch.arange(0, num_nodes, dtype=torch.long).view(-1, 1)
     test_rel = torch.from_numpy(test_rel)
+    test_edge_feat = torch.arange(0, test_graph.number_of_edges(), dtype=torch.long).view(-1, 1)
+      
     test_norm = node_norm_to_edge_norm(test_graph, torch.from_numpy(test_norm).view(-1, 1))
 
     if use_cuda:
@@ -231,7 +240,7 @@ def main(args):
                 model.cpu()
             model.eval()
             print("start eval")
-            embed = model(test_graph, test_node_id, test_rel, test_norm)
+            embed, e_embed = model(test_graph, test_node_id, test_rel, test_edge_feat,test_norm)
             mrr = utils.calc_mrr(embed, model.w_relation, torch.LongTensor(train_data),
                                  valid_data, test_data, hits=[1, 3, 10], eval_bz=args.eval_batch_size,
                                  eval_p=args.eval_protocol)
@@ -258,7 +267,7 @@ def main(args):
     model.eval()
     model.load_state_dict(checkpoint['state_dict'])
     print("Using best epoch: {}".format(checkpoint['epoch']))
-    embed = model(test_graph, test_node_id, test_rel, test_norm)
+    embed, e_embed = model(test_graph, test_node_id, test_rel, test_edge_feat,test_norm)
     utils.calc_mrr(embed, model.w_relation, torch.LongTensor(train_data), valid_data,
                    test_data, hits=[1, 3, 10], eval_bz=args.eval_batch_size, eval_p=args.eval_protocol)
 
@@ -278,7 +287,7 @@ if __name__ == '__main__':
             help="number of propagation rounds")
     parser.add_argument("--n-epochs", type=int, default=6000,
             help="number of minimum training epochs")
-    parser.add_argument("-d", "--dataset", type=str, default='FB15k',
+    parser.add_argument("-d", "--dataset", type=str, default='FB15k-237',
             help="dataset to use")
     parser.add_argument("--eval-batch-size", type=int, default=500,
             help="batch size when evaluating")

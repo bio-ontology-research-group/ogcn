@@ -1,8 +1,10 @@
 import torch.nn as nn
 
+import logging
+#logging.basicConfig(level=logging.DEBUG)
 
 class BaseRGCN(nn.Module):
-    def __init__(self, num_nodes, h_dim, out_dim, num_rels, num_bases,
+    def __init__(self, num_nodes, h_dim, out_dim, num_rels, num_edges, num_bases,
                  num_hidden_layers=1, dropout=0,
                  use_self_loop=False, use_cuda=False):
         super(BaseRGCN, self).__init__()
@@ -10,11 +12,14 @@ class BaseRGCN(nn.Module):
         self.h_dim = h_dim
         self.out_dim = out_dim
         self.num_rels = num_rels
+        self.num_edges = num_edges
         self.num_bases = None if num_bases < 0 else num_bases
         self.num_hidden_layers = num_hidden_layers
         self.dropout = dropout
         self.use_self_loop = use_self_loop
         self.use_cuda = use_cuda
+
+        logging.debug("Initial features: " + str(h_dim))
 
         # create rgcn layers
         self.build_model()
