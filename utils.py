@@ -145,6 +145,13 @@ class Ontology(object):
                         q.append(parent_id)
         return term_set
 
+    def get_prop_terms(self, terms):
+        prop_terms = set()
+
+        for term_id in terms:
+            prop_terms |= self.get_anchestors(term_id)
+        return prop_terms
+
 
     def get_parents(self, term_id):
         if term_id not in self.ont:

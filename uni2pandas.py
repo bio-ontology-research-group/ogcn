@@ -16,14 +16,15 @@ ORGS = set(['HUMAN', 'MOUSE', ])
     '--swissprot-file', '-sf', default='data/uniprot_sprot.dat.gz',
     help='UniProt/SwissProt knowledgebase file in text format (archived)')
 @ck.option(
-    '--out-file', '-o', default='data/swissprot.pkl',
+    '--out-file', '-o', default='data/swissprot_human.pkl',
     help='Result file with a list of proteins, sequences and annotations')
 def main(swissprot_file, out_file):
     go = Ontology('data/go.obo', with_rels=True)
-    proteins, accessions, sequences, annotations, string_ids, orgs = load_data(swissprot_file)
+    proteins, accessions, sequences, annotations, string_ids, orgs, genes = load_data(swissprot_file)
     df = pd.DataFrame({
         'proteins': proteins,
         'accessions': accessions,
+        'genes': genes,
         'sequences': sequences,
         'annotations': annotations,
         'string_ids': string_ids,
@@ -77,6 +78,7 @@ def load_data(swissprot_file):
     annotations = list()
     string_ids = list()
     orgs = list()
+    genes = list()
     with gzip.open(swissprot_file, 'rt') as f:
         prot_id = ''
         prot_ac = ''
@@ -84,20 +86,23 @@ def load_data(swissprot_file):
         org = ''
         annots = list()
         strs = list()
+        gene_id = ''
         for line in f:
             items = line.strip().split('   ')
             if items[0] == 'ID' and len(items) > 1:
-                if prot_id != '':
+                if prot_id != '' and org == '9606':
                     proteins.append(prot_id)
                     accessions.append(prot_ac)
                     sequences.append(seq)
                     annotations.append(annots)
                     string_ids.append(strs)
                     orgs.append(org)
+                    genes.append(gene_id)
                 prot_id = items[1]
                 annots = list()
                 strs = list()
                 seq = ''
+                gene_id = ''
             elif items[0] == 'AC' and len(items) > 1:
                 prot_ac = items[1]
             elif items[0] == 'OX' and len(items) > 1:
@@ -116,6 +121,8 @@ def load_data(swissprot_file):
                 if items[0] == 'STRING':
                     str_id = items[1]
                     strs.append(str_id)
+                if items[0] == 'GeneID':
+                    gene_id = items[1]
             elif items[0] == 'SQ':
                 seq = next(f).strip().replace(' ', '')
                 while True:
@@ -125,14 +132,15 @@ def load_data(swissprot_file):
                     else:
                         seq += sq
 
-
-        proteins.append(prot_id)
-        accessions.append(prot_ac)
-        sequences.append(seq)
-        annotations.append(annots)
-        string_ids.append(strs)
-        orgs.append(org)
-    return proteins, accessions, sequences, annotations, string_ids, orgs
+        if org == '9606':
+            proteins.append(prot_id)
+            accessions.append(prot_ac)
+            sequences.append(seq)
+            annotations.append(annots)
+            string_ids.append(strs)
+            orgs.append(org)
+            genes.append(gene_id)
+    return proteins, accessions, sequences, annotations, string_ids, orgs, genes
 
 
 if __name__ == '__main__':
