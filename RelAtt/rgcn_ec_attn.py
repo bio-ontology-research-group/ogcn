@@ -148,6 +148,7 @@ def main(args):
                            num_bases=args.n_bases,
                            num_hidden_layers=args.n_layers - 2,
                            dropout=args.dropout,
+                           attn_drop=args.attn_drop,
                            use_self_loop=args.use_self_loop,
                            use_cuda=use_cuda)
 
@@ -201,6 +202,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='RGCN')
     parser.add_argument("--dropout", type=float, default=0,
             help="dropout probability")
+    parser.add_argument("--attn-drop", type=float, default=0.1,
+            help="attention dropout probability")
     parser.add_argument("--n-hidden", type=int, default=16,
             help="number of hidden units")
     parser.add_argument("--gpu", type=int, default=-1,

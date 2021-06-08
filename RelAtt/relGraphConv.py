@@ -126,6 +126,7 @@ class RelGraphConv(nn.Module):
                  self_loop=True,
                  low_mem=False,
                  dropout=0.0,
+                 attn_drop = 0.0,
                  layer_norm=False):
         super(RelGraphConv, self).__init__()
         self.in_feat = in_feat
@@ -198,12 +199,14 @@ class RelGraphConv(nn.Module):
                                     gain=nn.init.calculate_gain('relu'))
 
         self.dropout = nn.Dropout(dropout)
+        self.attn_drop = nn.Dropout(attn_drop)
 
 
     def edge_attention(self, edges):
         z2 = th.cat([edges.src['z'], edges.data['z'], edges.dst['z']], dim=1)
         logging.debug("Z2: " + str(z2.shape))
         a = self.attn_vec(z2)
+        a = self.attn_drop(a)
         return {'norm': F.softmax(a)}
 
     def basis_message_func(self, edges, etypes):

@@ -105,6 +105,7 @@ class LinkPredict(nn.Module):
         # triplets is a list of data samples (positive and negative)
         # each row in the triplets is a 3-tuple of (source, relation, destination)
         score = self.calc_score(embed, triplets)
+        logging.debug("score: " + str(score))
         predict_loss = F.binary_cross_entropy_with_logits(score, labels)
         reg_loss = self.regularization_loss(embed)
         return predict_loss + self.reg_param * reg_loss

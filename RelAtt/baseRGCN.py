@@ -5,7 +5,7 @@ import logging
 
 class BaseRGCN(nn.Module):
     def __init__(self, num_nodes, h_dim, out_dim, num_rels, num_edges, num_bases,
-                 num_hidden_layers=1, dropout=0,
+                 num_hidden_layers=1, dropout=0, attn_drop = 0,
                  use_self_loop=False, use_cuda=False):
         super(BaseRGCN, self).__init__()
         self.num_nodes = num_nodes
