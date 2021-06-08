@@ -401,7 +401,19 @@ class RelGraphConv(nn.Module):
 
             g.ndata['z'] = hn
             he = self.shared(efeat)
-            g.edata['z'] = he
+
+            logging.debug("HE in train: " + str(he.shape))
+
+            index = 0
+            for canonical_etype in g.canonical_etypes:
+                _, _, eid = g.all_edges(form='all', etype=canonical_etype)
+                n = len(eid)
+
+                z = he[index]
+                z = z.unsqueeze(1)
+                z = th.tile(z,(n,))
+                g.edges[canonical_etype].data['z'] = th.transpose(z, 0, 1)
+
             g.apply_edges(self.edge_attention)
             ####
             

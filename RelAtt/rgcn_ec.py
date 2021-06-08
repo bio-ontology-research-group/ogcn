@@ -18,6 +18,8 @@ from functools import partial
 from dgl.data.rdf import AIFBDataset, MUTAGDataset, BGSDataset, AMDataset
 
 from model import BaseRGCN
+import logging
+logging.basicConfig(level=logging.DEBUG)
 
 class EntityClassify(BaseRGCN):
     def create_features(self):
@@ -79,8 +81,15 @@ def main(args):
         _, inverse_index, count = torch.unique(v, return_inverse=True, return_counts=True)
         degrees = count[inverse_index]
         norm = torch.ones(eid.shape[0]).float() / degrees.float()
+        
+        logging.debug("norm: " + str(norm.shape))
+
         norm = norm.unsqueeze(1)
+
+        logging.debug("norm__: " + str(norm.shape))
+
         hg.edges[canonical_etype].data['norm'] = norm
+        logging.debug("etypes: " + str(hg.edges[canonical_etype].data['norm'].shape))
 
     # get target category id
     category_id = len(hg.ntypes)

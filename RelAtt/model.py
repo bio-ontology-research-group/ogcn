@@ -106,6 +106,7 @@ class RelGraphEmbedLayer(nn.Module):
                 input_emb_size = input_size[ntype].shape[1]
                 embed = nn.Parameter(th.Tensor(input_emb_size, self.embed_size))
                 nn.init.xavier_uniform_(embed)
+              
                 self.embeds[str(ntype)] = embed
 
     @property

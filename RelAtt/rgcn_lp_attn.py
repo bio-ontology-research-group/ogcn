@@ -31,22 +31,21 @@ import utils
 
 
 class EmbeddingLayer(nn.Module):
-    def __init__(self, num_nodes, num_rels, num_edges, h_dim):
+    def __init__(self, num_nodes, num_rels, h_dim):
         super(EmbeddingLayer, self).__init__()
         self.n_embedding = torch.nn.Embedding(num_nodes, h_dim)
-        self.e_embedding = torch.nn.Embedding(num_edges, h_dim)
+        self.e_embedding = torch.nn.Embedding(num_rels, h_dim)
         self.num_nodes = num_nodes
         self.num_rels = num_rels
-        self.num_edges = num_edges
         self.h_dim = h_dim
 
     def forward(self, g, hn, r, he, norm):
 
         logging.debug("Embedding HN: " + str(hn.shape) + "  " + str(self.num_nodes) + "  " + str(self.h_dim))
-        logging.debug("Embedding HE: " + str(he.shape) + "  " + str(self.num_edges))
+        logging.debug("Embedding HE: " + str(he.shape) + "  " + str(self.num_rels))
         logging.debug("Embedding HN: " + str(self.n_embedding(hn.squeeze()).shape) + "  " + str(self.num_nodes))
         logging.debug("Squeeze HE: " + str(he.squeeze().shape))
-        logging.debug("Embedding HE: " + str(self.e_embedding(he.squeeze()).shape) + "  " + str(self.num_edges))
+        logging.debug("Embedding HE: " + str(self.e_embedding(he.squeeze()).shape) + "  " + str(self.num_rels))
         return self.n_embedding(hn.squeeze()), self.e_embedding(he.squeeze())
 
 
@@ -64,7 +63,7 @@ class EmbeddingLayer(nn.Module):
 
 class RGCN(BaseRGCN):
     def build_input_layer(self):
-        return EmbeddingLayer(self.num_nodes, self.num_rels, self.num_edges,self.h_dim)
+        return EmbeddingLayer(self.num_nodes, self.num_rels,self.h_dim)
 
     def build_hidden_layer(self, idx):
         act = F.relu if idx < self.num_hidden_layers - 1 else None
@@ -73,10 +72,10 @@ class RGCN(BaseRGCN):
                 dropout=self.dropout)
 
 class LinkPredict(nn.Module):
-    def __init__(self, in_dim, h_dim, num_rels, num_edges,num_bases=-1,
+    def __init__(self, in_dim, h_dim, num_rels,num_bases=-1,
                  num_hidden_layers=1, dropout=0, use_cuda=False, reg_param=0):
         super(LinkPredict, self).__init__()
-        self.rgcn = RGCN(in_dim, h_dim, h_dim, num_rels * 2, num_edges*2, num_bases,
+        self.rgcn = RGCN(in_dim, h_dim, h_dim, num_rels * 2, num_bases,
                          num_hidden_layers, dropout, use_cuda)
         self.reg_param = reg_param
         self.w_relation = nn.Parameter(torch.Tensor(num_rels, h_dim))
@@ -138,7 +137,6 @@ def main(args):
     model = LinkPredict(num_nodes,
                         args.n_hidden,
                         num_rels,
-                        num_edges,
                         num_bases=args.n_bases,
                         num_hidden_layers=args.n_layers,
                         dropout=args.dropout,
@@ -156,7 +154,7 @@ def main(args):
                 range(test_graph.number_of_nodes())).float().view(-1,1)
     test_node_id = torch.arange(0, num_nodes, dtype=torch.long).view(-1, 1)
     test_rel = torch.from_numpy(test_rel)
-    test_edge_feat = torch.arange(0, test_graph.number_of_edges(), dtype=torch.long).view(-1, 1)
+    test_edge_feat = torch.arange(0, num_rels, dtype=torch.long).view(-1, 1)
       
     test_norm = node_norm_to_edge_norm(test_graph, torch.from_numpy(test_norm).view(-1, 1))
 
@@ -195,7 +193,7 @@ def main(args):
 
         # set node/edge feature
         node_id = torch.from_numpy(node_id).view(-1, 1).long()
-        edge_feat = torch.from_numpy(edge_type).view(-1, 1).long()
+        edge_feat = torch.arange(num_rels).view(-1, 1).long()
         edge_type = torch.from_numpy(edge_type)
 
         logging.debug("Node id: " + str(node_id.shape))

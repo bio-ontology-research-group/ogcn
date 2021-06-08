@@ -49,17 +49,26 @@ class EntityClassify(BaseRGCN):
             features = features.cuda()
         return features
 
+
+    def embedding_dim(self):
+        return 3*self.h_dim
+
     def build_input_layer(self):
-        return EmbeddingLayer(self.num_nodes, self.num_rels, self.num_edges, self.h_dim)
+        return EmbeddingLayer(self.num_nodes, self.num_rels, self.embedding_dim())
     # def build_input_layer(self):
     #     return RelGraphConv(self.num_nodes, self.h_dim, self.num_rels, "basis",
     #             self.num_bases, activation=F.relu, self_loop=self.use_self_loop,
     #             dropout=self.dropout)
 
     def build_hidden_layer(self, idx):
-        return RelGraphConv(self.h_dim, self.h_dim, self.num_rels, "basis",
+        if idx == 0:
+            return RelGraphConv(self.embedding_dim(), self.h_dim, self.num_rels, "basis",
                 self.num_bases, activation=F.relu, self_loop=self.use_self_loop,
                 dropout=self.dropout)
+        else:
+            return RelGraphConv(self.h_dim, self.h_dim, self.num_rels, "basis",
+                    self.num_bases, activation=F.relu, self_loop=self.use_self_loop,
+                    dropout=self.dropout)
 
     def build_output_layer(self):
         return RelGraphConv(self.h_dim, self.out_dim, self.num_rels, "basis",
@@ -115,11 +124,9 @@ def main(args):
 
     g = dgl.to_homogeneous(hg, edata=['norm'])
     num_nodes = g.number_of_nodes()
-    num_edges = g.number_of_edges()
     node_ids = torch.arange(num_nodes)
     edge_norm = g.edata['norm']
     edge_type = g.edata[dgl.ETYPE].long()
-    edge_feat = torch.arange(num_edges).view(-1, 1).long()
 
     # find out the target node ids in g
     node_tids = g.ndata[dgl.NTYPE]
@@ -128,6 +135,7 @@ def main(args):
 
     # since the nodes are featureless, the input feature is then the node id.
     feats = torch.arange(num_nodes).view(-1, 1).long()
+    efeats = torch.arange(num_rels).view(-1, 1).long()
     #feats = torch.from_numpy(node_id)
     
     # check cuda
@@ -144,7 +152,6 @@ def main(args):
                            args.n_hidden,
                            num_classes,
                            num_rels,
-                           num_edges,
                            num_bases=args.n_bases,
                            num_hidden_layers=args.n_layers - 2,
                            dropout=args.dropout,
@@ -167,7 +174,7 @@ def main(args):
     for epoch in range(args.n_epochs):
         optimizer.zero_grad()
         t0 = time.time()
-        logits, e_logits = model(g, feats, edge_type, edge_feat, edge_norm)
+        logits, e_logits = model(g, feats, edge_type, efeats, edge_norm)
         logits = logits[target_idx]
         loss = F.cross_entropy(logits[train_idx], labels[train_idx])
         t1 = time.time()
@@ -187,7 +194,7 @@ def main(args):
     print()
 
     model.eval()
-    logits, e_logits = model.forward(g, feats, edge_type, edge_feat, edge_norm)
+    logits, e_logits = model.forward(g, feats, edge_type, efeats, edge_norm)
     logits = logits[target_idx]
     test_loss = F.cross_entropy(logits[test_idx], labels[test_idx])
     test_acc = torch.sum(logits[test_idx].argmax(dim=1) == labels[test_idx]).item() / len(test_idx)
@@ -212,7 +219,7 @@ if __name__ == '__main__':
             help="learning rate")
     parser.add_argument("--n-bases", type=int, default=-1,
             help="number of filter weight matrices, default: -1 [use all]")
-    parser.add_argument("--n-layers", type=int, default=2,
+    parser.add_argument("--n-layers", type=int, default=3,
             help="number of propagation rounds")
     parser.add_argument("-e", "--n-epochs", type=int, default=50,
             help="number of training epochs")
