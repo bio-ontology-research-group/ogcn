@@ -73,7 +73,7 @@ class RGCN(BaseRGCN):
 
 class LinkPredict(nn.Module):
     def __init__(self, in_dim, h_dim, num_rels,num_bases=-1,
-                 num_hidden_layers=1, dropout=0, use_cuda=False, reg_param=0):
+                 num_hidden_layers=1, dropout=0, attn_drop = 0, use_cuda=False, reg_param=0):
         super(LinkPredict, self).__init__()
         self.rgcn = RGCN(in_dim, h_dim, h_dim, num_rels * 2, num_bases,
                          num_hidden_layers, dropout, use_cuda)
@@ -140,6 +140,7 @@ def main(args):
                         num_bases=args.n_bases,
                         num_hidden_layers=args.n_layers,
                         dropout=args.dropout,
+                        attn_drop=args.attn_drop,
                         use_cuda=use_cuda,
                         reg_param=args.regularization)
 
@@ -274,6 +275,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='RGCN')
     parser.add_argument("--dropout", type=float, default=0.2,
             help="dropout probability")
+    parser.add_argument("--attn-drop", type=float, default=0.1,
+            help="attention dropout probability")
     parser.add_argument("--n-hidden", type=int, default=500,
             help="number of hidden units")
     parser.add_argument("--gpu", type=int, default=-1,

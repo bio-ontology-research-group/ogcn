@@ -238,7 +238,7 @@ if __name__ == '__main__':
             help="dropout probability")
     parser.add_argument("--n-hidden", type=int, default=500,
             help="number of hidden units")
-    parser.add_argument("--gpu", type=int, default=-1,
+    parser.add_argument("--gpu", type=int, default=0,
             help="gpu")
     parser.add_argument("--lr", type=float, default=1e-2,
             help="learning rate")
