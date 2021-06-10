@@ -89,7 +89,7 @@ class HPOLayer(object):
     '--threshold', '-th', default=0.5,
     help='Prediction threshold')
 @ck.option(
-    '--device', '-d', default='cuda:0',
+    '--device', '-d', default='cpu:0',
     help='Prediction threshold')
 def main(hp_file, data_file, terms_file, gos_file, model_file,
          out_file, fold, batch_size, epochs, load, logger_file, threshold,
@@ -111,27 +111,48 @@ def main(hp_file, data_file, terms_file, gos_file, model_file,
     term_set = set(terms)
     terms_dict = {v: i for i, v in enumerate(terms)}
     print('Loading data')
-    g, features, labels, train_mask, test_mask, test_df = load_data(data_file, terms_dict, gos_dict, fold)
-    g, features, labels, train_mask, test_mask = g.to(device), features.to(device), labels.to(device), train_mask.to(device), test_mask.to(device)
+    g, features, labels, train_nids, test_nids, test_df = load_data(data_file, terms_dict, gos_dict, fold)
+    g, features, labels, train_nids, test_nids = g.to(device), features.to(device), labels.to(device), train_nids.to(device), test_nids.to(device)
     net = Net(len(gos), len(terms)).to(device)
     print(net)
+    sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
+    dataloader = dgl.dataloading.NodeDataLoader(
+        g, train_nids, sampler,
+        batch_size=32,
+        shuffle=True,
+        drop_last=False,
+        num_workers=4
+    )
+
+    test_dataloader = dgl.dataloading.NodeDataLoader(
+        g, test_nids, sampler,
+        batch_size=32,
+        shuffle=True,
+        drop_last=False,
+        num_workers=4
+    )
     optimizer = th.optim.Adam(net.parameters(), lr=1e-2)
     best_loss = 10000.0
     if not load:
         print('Training the model')
         for epoch in range(epochs):
             net.train()
-            logits = net(g, features)
-            loss = F.binary_cross_entropy(logits[train_mask], labels[train_mask])
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            for input_nodes, output_nodes, blocks in dataloader:
+                logits = net(blocks, features[input_nodes])
+                loss = F.binary_cross_entropy(logits, labels[output_nodes])
+                print('Train loss', loss)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
             net.eval()
             with th.no_grad():
-                logits = net(g, features)
-                test_loss = F.binary_cross_entropy(logits[test_mask], labels[test_mask])
-                print(f"Epoch {epoch} | Loss {loss.item():.4f} | Test Loss {test_loss.item():.4f}")
+                test_loss = 0
+                for input_nodes, output_nodes, blocks in test_dataloader:
+                    logits = net(blocks, features[input_nodes])
+                    batch_loss = F.binary_cross_entropy(logits, labels[output_nodes])
+                    test_loss += batch_loss.item()
+                print(f"Epoch {epoch} | Loss {loss.item():.4f} | Test Loss {test_loss:.4f}")
                 if test_loss < best_loss:
                     best_loss = test_loss
                     print('Saving model')
@@ -157,14 +178,13 @@ class Net(nn.Module):
 
     def __init__(self, input_length, nb_classes):
         super().__init__()
-        self.gcn1 = GraphConv(input_length, 1000)
-        self.gcn2 = GraphConv(1000, nb_classes)
-        self.fc1 = nn.Linear(input_length, nb_classes)
+        self.gcn1 = GraphConv(input_length, nb_classes)
+        # self.gcn2 = GraphConv(1000, nb_classes)
+        # self.fc1 = nn.Linear(input_length, nb_classes)
 
-    def forward(self, g, features):
-        #x = self.gcn1(g, features)
-        x = self.fc1(features)
-        #x = self.gcn2(g, x)
+    def forward(self, blocks, x):
+        x = self.gcn1(blocks[0], x)
+        # x = self.gcn2(blocks[1], x)
         x = F.sigmoid(x)
         return x
 
@@ -228,12 +248,12 @@ def load_data(data_file, terms_dict, gos_dict, fold=1):
     test_mask = np.zeros(n, dtype=np.bool)
     test_mask[test_index] = True
 
-    train_mask = th.BoolTensor(train_mask)
-    test_mask = th.BoolTensor(test_mask)
+    train_index = th.LongTensor(train_index)
+    test_index = th.LongTensor(test_index)
     
     test_df = df.iloc[test_index]
     
-    return g, features, labels, train_mask, test_mask, test_df
+    return g, features, labels, train_index, test_index, test_df
 
 if __name__ == '__main__':
     main()
