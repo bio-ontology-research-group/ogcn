@@ -9,6 +9,8 @@ import dgl.function as fn
 from dgl.nn.pytorch import utils
 from dgl.base import DGLError
 from dgl import edge_subgraph
+from dgl.nn.functional import edge_softmax
+
 
 import logging
 #logging.basicConfig(level=logging.DEBUG)
@@ -206,8 +208,7 @@ class RelGraphConv(nn.Module):
         z2 = th.cat([edges.src['z'], edges.data['z'], edges.dst['z']], dim=1)
         logging.debug("Z2: " + str(z2.shape))
         a = self.attn_vec(z2)
-        a = self.attn_drop(a)
-        return {'norm': F.softmax(a)}
+        return {'norm': a}
 
     def basis_message_func(self, edges, etypes):
         """Message function for basis regularizer.
@@ -404,8 +405,7 @@ class RelGraphConv(nn.Module):
 
             logging.debug("HE in train: " + str(he.shape))
 
-            index = 0
-            for canonical_etype in g.canonical_etypes:
+            for index, canonical_etype in enumerate(g.canonical_etypes):
                 _, _, eid = g.all_edges(form='all', etype=canonical_etype)
                 n = len(eid)
 
@@ -415,11 +415,12 @@ class RelGraphConv(nn.Module):
                 g.edges[canonical_etype].data['z'] = th.transpose(z, 0, 1)
 
             g.apply_edges(self.edge_attention)
+            g.edata['norm'] = self.attn_drop(edge_softmax(g, g.edata['norm']))
             ####
             
             g.srcdata['h'] = nfeat
-            if norm is not None:
-                g.edata['norm'] = norm
+            # if norm is not None:
+            #     g.edata['norm'] = norm
             if self.self_loop:
                 loop_message = utils.matmul_maybe_select(nfeat[:g.number_of_dst_nodes()],
                                                          self.loop_weight)

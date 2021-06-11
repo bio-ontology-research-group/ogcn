@@ -133,7 +133,7 @@ def main(args):
     # optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-    model_state_file = 'model_state.pth'
+    model_state_file = 'model_state_.pth'
     forward_time = []
     backward_time = []
 
@@ -240,7 +240,7 @@ if __name__ == '__main__':
             help="number of hidden units")
     parser.add_argument("--gpu", type=int, default=0,
             help="gpu")
-    parser.add_argument("--lr", type=float, default=1e-2,
+    parser.add_argument("--lr", type=float, default=3e-3,
             help="learning rate")
     parser.add_argument("--n-bases", type=int, default=100,
             help="number of weight blocks for each relation")

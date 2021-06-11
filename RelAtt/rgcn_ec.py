@@ -148,6 +148,9 @@ def main(args):
         t0 = time.time()
         logits = model(g, feats, edge_type, edge_norm)
         logits = logits[target_idx]
+
+        logging.debug("logits shape: " + str(logits[train_idx].shape))
+        logging.debug("labels shape: " + str(labels[train_idx].shape))
         loss = F.cross_entropy(logits[train_idx], labels[train_idx])
         t1 = time.time()
         loss.backward()

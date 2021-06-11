@@ -279,9 +279,9 @@ if __name__ == '__main__':
             help="attention dropout probability")
     parser.add_argument("--n-hidden", type=int, default=500,
             help="number of hidden units")
-    parser.add_argument("--gpu", type=int, default=-1,
+    parser.add_argument("--gpu", type=int, default=0,
             help="gpu")
-    parser.add_argument("--lr", type=float, default=1e-2,
+    parser.add_argument("--lr", type=float, default=3e-3,
             help="learning rate")
     parser.add_argument("--n-bases", type=int, default=100,
             help="number of weight blocks for each relation")

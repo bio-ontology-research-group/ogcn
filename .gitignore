@@ -129,3 +129,12 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+#
+**dgcm/
+*.pth
+*.th
+
+# slurm jobs output files
+*.err
+*.out

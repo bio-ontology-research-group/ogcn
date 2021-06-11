@@ -171,6 +171,7 @@ def main(args):
     forward_time = []
     backward_time = []
     model.train()
+    best_loss = 1000
     for epoch in range(args.n_epochs):
         optimizer.zero_grad()
         t0 = time.time()
@@ -191,8 +192,12 @@ def main(args):
         val_acc = torch.sum(logits[val_idx].argmax(dim=1) == labels[val_idx]).item() / len(val_idx)
         print("Train Accuracy: {:.4f} | Train Loss: {:.4f} | Validation Accuracy: {:.4f} | Validation loss: {:.4f}".
               format(train_acc, loss.item(), val_acc, val_loss.item()))
+        if best_loss > val_loss:
+            best_loss = val_loss
+            torch.save(model.state_dict(), 'model.th')
     print()
 
+    model.load_state_dict(torch.load('model.th'))
     model.eval()
     logits, e_logits = model.forward(g, feats, edge_type, efeats, edge_norm)
     logits = logits[target_idx]
@@ -209,19 +214,19 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='RGCN')
     parser.add_argument("--dropout", type=float, default=0,
             help="dropout probability")
-    parser.add_argument("--attn-drop", type=float, default=0.1,
+    parser.add_argument("--attn-drop", type=float, default=0.2,
             help="attention dropout probability")
     parser.add_argument("--n-hidden", type=int, default=16,
             help="number of hidden units")
     parser.add_argument("--gpu", type=int, default=-1,
             help="gpu")
-    parser.add_argument("--lr", type=float, default=1e-2,
+    parser.add_argument("--lr", type=float, default=3e-3,
             help="learning rate")
     parser.add_argument("--n-bases", type=int, default=-1,
             help="number of filter weight matrices, default: -1 [use all]")
     parser.add_argument("--n-layers", type=int, default=3,
             help="number of propagation rounds")
-    parser.add_argument("-e", "--n-epochs", type=int, default=50,
+    parser.add_argument("-e", "--n-epochs", type=int, default=100,
             help="number of training epochs")
     parser.add_argument("-d", "--dataset", type=str, default = 'aifb',
             help="dataset to use")
