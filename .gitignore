@@ -138,3 +138,5 @@ dmypy.json
 # slurm jobs output files
 *.err
 *.out
+
+*job*
