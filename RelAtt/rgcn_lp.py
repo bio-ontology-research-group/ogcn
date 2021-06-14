@@ -133,7 +133,7 @@ def main(args):
     # optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-    model_state_file = 'model_state_.pth'
+    model_state_file = 'model_state_wn.pth'
     forward_time = []
     backward_time = []
 
@@ -143,6 +143,7 @@ def main(args):
     epoch = 0
     best_mrr = 0
     while True:
+        torch.set_grad_enabled(True)
         model.train()
         epoch += 1
 
@@ -199,6 +200,7 @@ def main(args):
             # perform validation on CPU because full graph is too large
             if use_cuda:
                 model.cpu()
+            torch.set_grad_enabled(False)
             model.eval()
             print("start eval")
             embed = model(test_graph, test_node_id, test_rel, test_norm)
@@ -225,6 +227,7 @@ def main(args):
     checkpoint = torch.load(model_state_file)
     if use_cuda:
         model.cpu() # test on CPU
+    torch.set_grad_enabled(False)
     model.eval()
     model.load_state_dict(checkpoint['state_dict'])
     print("Using best epoch: {}".format(checkpoint['epoch']))
@@ -240,7 +243,7 @@ if __name__ == '__main__':
             help="number of hidden units")
     parser.add_argument("--gpu", type=int, default=0,
             help="gpu")
-    parser.add_argument("--lr", type=float, default=3e-3,
+    parser.add_argument("--lr", type=float, default=1e-3,
             help="learning rate")
     parser.add_argument("--n-bases", type=int, default=100,
             help="number of weight blocks for each relation")
@@ -248,7 +251,7 @@ if __name__ == '__main__':
             help="number of propagation rounds")
     parser.add_argument("--n-epochs", type=int, default=6000,
             help="number of minimum training epochs")
-    parser.add_argument("-d", "--dataset", type=str, default='FB15k-237',
+    parser.add_argument("-d", "--dataset", type=str, default='wn18',
             help="dataset to use")
     parser.add_argument("--eval-batch-size", type=int, default=500,
             help="batch size when evaluating")
