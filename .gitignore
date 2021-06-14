@@ -139,4 +139,4 @@ dmypy.json
 *.err
 *.out
 
-*job*
+RelAtt/job*
