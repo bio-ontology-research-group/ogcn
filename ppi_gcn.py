@@ -9,8 +9,8 @@ from torch import nn
 from torch.nn import functional as F
 from torch import optim
 from sklearn.metrics import roc_curve, auc, matthews_corrcoef
-
-
+import copy
+from torch.utils.data import DataLoader
 
 @ck.command()
 @ck.option(
@@ -32,7 +32,7 @@ from sklearn.metrics import roc_curve, auc, matthews_corrcoef
     '--batch-size', '-bs', default=32,
     help='Batch size for training')
 @ck.option(
-    '--epochs', '-ep', default=16,
+    '--epochs', '-ep', default=32,
     help='Training epochs')
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
@@ -48,44 +48,44 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     train_labels = th.FloatTensor(train_df['labels'].values).to(device)
     test_labels = th.FloatTensor(test_df['labels'].values).to(device)
+
+    train_set_batches = get_batches(g, annots, prot_idx, train_df, train_labels, batch_size)
+    test_set_batches = get_batches(g, annots, prot_idx, test_df, test_labels, batch_size)
+
+
     for epoch in range(epochs):
-        total_loss = 0
+        epoch_loss = 0
         model.train()
-        with ck.progressbar(train_df.itertuples(), length=len(train_df)) as bar:
-            for row in bar:
-                i = bar.pos
-                p1, p2 = row.interactions
-                label = train_labels[i].view(1, 1)
-                if p1 not in prot_idx or p2 not in prot_idx:
-                    continue
-                pi1, pi2 = prot_idx[p1], prot_idx[p2]
-                feat = annots[:, [pi1, pi2]]
-                logits = model(g, feat)
-                loss = loss_func(logits, label)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                total_loss += loss.detach().item()
-        total_loss /= len(train_df)
+
+        for iter, (batch, labels) in enumerate(train_set_batches):
+            logits = model(batch)
+
+            labels = labels.unsqueeze(1).to(device)
+            loss = loss_func(logits, labels)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss.detach().item()
+
+        epoch_loss /= (iter+1)
+
+        
         model.eval()
         test_loss = 0
-        preds = np.zeros(len(test_df), dtype=np.float32)
+        preds = []
         with th.no_grad():
-            for i, row in enumerate(test_df.itertuples()):
-                p1, p2 = row.interactions
-                label = test_labels[i].view(1, 1)
-                if p1 not in prot_idx or p2 not in prot_idx:
-                    continue
-                pi1, pi2 = prot_idx[p1], prot_idx[p2]
-                feat = annots[:, [pi1, pi2]]
-                logits = model(g, feat)
-                loss = loss_func(logits, label)
-                preds[i] = logits.detach().item()
+
+            for iter, (batch, labels) in enumerate(test_set_batches):
+                logits = model(batch)
+                labels = labels.unsqueeze(1).to(device)
+                loss = loss_func(logits, labels)
                 test_loss += loss.detach().item()
-            test_loss /= len(test_df)
+                preds = np.append(preds, logits.cpu())
+            test_loss /= (iter+1)
+
         labels = test_df['labels'].values
         roc_auc = compute_roc(labels, preds)
-        print(f'Epoch {epoch}: Loss - {total_loss}, Test loss - {test_loss}, AUC - {roc_auc}')
+        print(f'Epoch {epoch}: Loss - {epoch_loss}, Test loss - {test_loss}, AUC - {roc_auc}')
 
 def compute_roc(labels, preds):
     # Compute ROC curve and ROC area for each class
@@ -94,21 +94,47 @@ def compute_roc(labels, preds):
 
     return roc_auc
 
+def get_batches(graph, annots, prot_idx, df, labels, batch_size):
+    dataset = []
+    with ck.progressbar(df.itertuples(), length=len(df)) as bar:
+        for row in bar:
+            i = bar.pos
+            p1, p2 = row.interactions
+            label = labels[i].view(1, 1)
+            if p1 not in prot_idx or p2 not in prot_idx:
+                continue
+            pi1, pi2 = prot_idx[p1], prot_idx[p2]
+            feat = annots[:, [0, pi1+1, pi2+1]]
+            graph_cp = copy.deepcopy(graph)
+            graph_cp.ndata['feat'] = feat
+            dataset.append((graph_cp, label))
+
+    return DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate)
+    
+def collate(samples):
+    # The input `samples` is a list of pairs
+    #  (graph, label).
+    graphs, labels = map(list, zip(*samples))
+    batched_graph = dgl.batch(graphs)
+    return batched_graph, th.tensor(labels)
+
 class PPIModel(nn.Module):
 
     def __init__(self, *args, **kwargs):
         super().__init__()
-        self.gcn1 = dglnn.GraphConv(2, 2)
-        self.gcn2 = dglnn.GraphConv(2, 2)
-        self.gcn3 = dglnn.GraphConv(2, 2)
-        self.fc = nn.Linear(572, 1)
+        self.gcn1 = dglnn.GraphConv(3, 3)
+        self.gcn2 = dglnn.GraphConv(3, 3)
+        self.gcn3 = dglnn.GraphConv(3, 3)
+        self.fc = nn.Linear(286*3, 1)
         
-    def forward(self, g, features):
+    def forward(self, g):
+        features = g.ndata['feat']
         x = self.gcn1(g, features)
         x = F.relu(x)
         x = self.gcn2(g, x)
         x = F.relu(x)
-        x = th.flatten(x).view(1, -1)
+
+        x = th.flatten(x).view(-1, 286*3)
         return th.sigmoid(self.fc(x))
         
 def load_ppi_data(train_inter_file, test_inter_file):
@@ -139,14 +165,18 @@ def load_graph_data(data_file):
 
     df = pd.read_pickle(data_file)
     df = df[df['orgs'] == '559292']
-    annotations = np.zeros((len(nodes), len(df)), dtype=np.float32)
+    go.calculate_ic(df['prop_annotations'])
+    
+    annotations = np.zeros((len(nodes), len(df) + 1), dtype=np.float32)
+    for i, go_id in enumerate(go.ont.keys()):
+        annotations[i, 0] = go.get_ic(go_id)
     prot_idx = {}
     for i, row in enumerate(df.itertuples()):
         prot_id = row.accessions.split(';')[0]
         prot_idx[prot_id] = i
-        for go_id in row.exp_annotations:
+        for go_id in row.prop_annotations:
             if go_id in node_idx:
-                annotations[node_idx[go_id], i] = 1
+                annotations[node_idx[go_id], i + 1] = 1
 
     return g, annotations, prot_idx
     
