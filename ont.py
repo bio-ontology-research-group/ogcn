@@ -5,12 +5,14 @@ import numpy as np
 from xml.etree import ElementTree as ET
 import math
 import utils as u
-
+import dgl
 class Ontology(object):
 
-    def __init__(self, filename='data/go.obo', with_rels=False):
-        self.ont = self.load(filename, with_rels)
+    def __init__(self, filename='data/go.obo', rels=[]):
+        self.rels = rels
+        self.ont = self.load(filename, self.rels)
         self.ic = None
+        
 
     def has_term(self, term_id):
         return term_id in self.ont
@@ -58,9 +60,34 @@ class Ontology(object):
                 else:
                     chunk.append(line)
 
-        #Once the ontology is created
-        pass
+        return ont        
         
+
+    def toDGLGraph(self):
+        # Consider that there is only one type of nodes 
+        ######
+        edges = dict()
+        edges[('node', 'is_a', 'node')] = list()
+        for rel in self.rels:
+            edges[('node', rel, 'node')] = list()
+
+        nodes = list(self.ont.keys())
+        node_idx = {v: k for k, v in enumerate(nodes)}
+
+        for n_id in nodes:
+            src = node_idx[n_id]
+
+            #is_a relation
+            dst = node_idx[self.ont[n_id]['is_a']]
+            edges[('node', 'is_a', 'node')].append([src, dst])
+
+            #other relations
+            for rel in self.rels:
+                for dst_id in self.ont[n_id][rel]
+                    dst = node_idx[dst_id]
+                    edges[('node', rel, 'node')].append([src, dst])
+
+        return dgl.heterograph(edges)
 
 
     def load(self, filename, with_rels):
