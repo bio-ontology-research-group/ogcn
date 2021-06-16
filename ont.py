@@ -43,7 +43,7 @@ class Ontology(object):
             return 0.0
         return self.ic[go_id]
 
-    def load_(self, filename, rels=[]):
+    def load(self, filename, rels=[]):
         ont = dict()
 
         with open(filename, 'r') as f:
@@ -51,7 +51,7 @@ class Ontology(object):
             for line in f:
                 line = line.strip()
                 if not line: #empty line
-                    obj = processChunk(chunk, rels)
+                    obj = self.processChunk(chunk, rels)
                     if obj != None:  
                         ont[obj['id']] = obj
                     chunk = []
@@ -60,6 +60,11 @@ class Ontology(object):
                 else:
                     chunk.append(line)
 
+        for term_id in list(ont.keys()):
+            for t_id in ont[term_id]['alt_ids']:
+                ont[t_id] = ont[term_id]
+            if ont[term_id]['is_obsolete']:
+                del ont[term_id]
         return ont        
         
 
@@ -84,74 +89,19 @@ class Ontology(object):
 
             #other relations
             for rel in self.rels:
-                for dst_id in self.ont[n_id][rel]:
-                    dst = node_idx[dst_id]
-                    edges[('node', rel, 'node')].append([src, dst])
+                if rel in self.ont[n_id]:
+                    for dst_id in self.ont[n_id][rel]:
+                        dst = node_idx[dst_id]
+                        edges[('node', rel, 'node')].append([src, dst])
+
+        
+        print(('node', 'is_a', 'node'), len(edges[('node', 'is_a', 'node')]))
+        for rel in self.rels:
+            print(('node', rel, 'node'), len(edges[('node', rel, 'node')]))
 
         return dgl.heterograph(edges)
 
-
-    def load(self, filename, with_rels):
-        ont = dict()
-        obj = None
-        with open(filename, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                if line == '[Term]':
-                    if obj is not None:
-                        ont[obj['id']] = obj
-                    obj = dict()
-                    obj['is_a'] = list()
-                    obj['part_of'] = list()
-                    obj['regulates'] = list()
-                    obj['alt_ids'] = list()
-                    obj['is_obsolete'] = False
-                    continue
-                elif line == '[Typedef]':
-                    if obj is not None:
-                        ont[obj['id']] = obj
-                    obj = None
-                else:
-                    if obj is None:
-                        continue
-                    l = line.split(": ")
-                    if l[0] == 'id':
-                        obj['id'] = l[1]
-                    elif l[0] == 'alt_id':
-                        obj['alt_ids'].append(l[1])
-                    elif l[0] == 'namespace':
-                        obj['namespace'] = l[1]
-                    elif l[0] == 'is_a':
-                        obj['is_a'].append(l[1].split(' ! ')[0])
-                    elif with_rels and l[0] == 'relationship':
-                        it = l[1].split()
-                        # add all types of relationships
-                        obj['is_a'].append(it[1])
-                    elif l[0] == 'name':
-                        obj['name'] = l[1]
-                    elif l[0] == 'is_obsolete' and l[1] == 'true':
-                        obj['is_obsolete'] = True
-            if obj is not None:
-                ont[obj['id']] = obj
-        for term_id in list(ont.keys()):
-            for t_id in ont[term_id]['alt_ids']:
-                ont[t_id] = ont[term_id]
-            if ont[term_id]['is_obsolete']:
-                del ont[term_id]
-        for term_id, val in ont.items():
-            if 'children' not in val:
-                val['children'] = set()
-            for p_id in val['is_a']:
-                if p_id in ont:
-                    if 'children' not in ont[p_id]:
-                        ont[p_id]['children'] = set()
-                    ont[p_id]['children'].add(term_id)
-     
-        return ont
-
-    def processChunk(chunk, rels=[]):
+    def processChunk(self, chunk, rels=[]):
         if chunk[0] != '[Term]':
             return None
         
@@ -173,9 +123,9 @@ class Ontology(object):
             elif key == 'is_a':
                 obj['is_a'].append(val.split(' ! ')[0])
             elif key == 'relationship':
-                rel, val = val.split()
+                rel, val = val.split()[:2]
                 if rel in rels:
-                    obj[rel] = val
+                    obj[rel].append(val)
             elif key == 'is_obsolete' and val == 'true':
                 obj['is_obsolete'] = True
         return obj
