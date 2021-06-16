@@ -78,12 +78,13 @@ class Ontology(object):
             src = node_idx[n_id]
 
             #is_a relation
-            dst = node_idx[self.ont[n_id]['is_a']]
-            edges[('node', 'is_a', 'node')].append([src, dst])
+            for dst_id in self.ont[n_id]['is_a']:
+                dst = node_idx[dst_id]
+                edges[('node', 'is_a', 'node')].append([src, dst])
 
             #other relations
             for rel in self.rels:
-                for dst_id in self.ont[n_id][rel]
+                for dst_id in self.ont[n_id][rel]:
                     dst = node_idx[dst_id]
                     edges[('node', rel, 'node')].append([src, dst])
 
@@ -151,7 +152,7 @@ class Ontology(object):
         return ont
 
     def processChunk(chunk, rels=[]):
-        if chunk[0] != '[Term]'
+        if chunk[0] != '[Term]':
             return None
         
         obj = dict()
@@ -159,6 +160,7 @@ class Ontology(object):
         for rel in rels:
             obj[rel] = list()
         
+        obj['is_a'] = list()
         obj['alt_ids'] = list()
         obj['is_obsolete'] = False
         
