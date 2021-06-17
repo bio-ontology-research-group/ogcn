@@ -9,7 +9,7 @@ import dgl.function as fn
 from dgl.nn.pytorch import utils
 from dgl.base import DGLError
 from dgl import edge_subgraph
-from dgl.nn.functional import edge_softmax
+from dgl.ops import edge_softmax
 
 
 import logging
@@ -395,13 +395,16 @@ class RelGraphConv(nn.Module):
         with g.local_scope():
             
             ####
+
             hn = self.shared(nfeat)
 
             logging.debug("HN: " + str(nfeat.shape))
             logging.debug("HE: " + str(efeat.shape))
 
+
             g.ndata['z'] = hn
             he = self.shared(efeat)
+
 
             logging.debug("HE in train: " + str(he.shape))
 

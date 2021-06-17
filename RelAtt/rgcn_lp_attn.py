@@ -23,7 +23,7 @@ from relGraphConv import RelGraphConv
 
 import logging
 
-#logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
 
 from baseRGCN import BaseRGCN
 
@@ -280,7 +280,7 @@ if __name__ == '__main__':
             help="dropout probability")
     parser.add_argument("--attn-drop", type=float, default=0.2,
             help="attention dropout probability")
-    parser.add_argument("--n-hidden", type=int, default=500,
+    parser.add_argument("--n-hidden", type=int, default=504,
             help="number of hidden units")
     parser.add_argument("--gpu", type=int, default=0,
             help="gpu")

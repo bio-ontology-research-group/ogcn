@@ -11,8 +11,8 @@ from torch import optim
 from sklearn.metrics import roc_curve, auc, matthews_corrcoef
 import copy
 from torch.utils.data import DataLoader
-from dgl.nn.pytorch import RelGraphConv
-from baseRGCN import BaseRGCN
+from RelAtt.relGraphConv import RelGraphConv
+from RelAtt.baseRGCN import BaseRGCN
 
 
 
@@ -142,8 +142,23 @@ def collate(samples):
     batched_graph = dgl.batch(graphs)
     return batched_graph, th.tensor(labels)
 
+class EmbeddingLayer(nn.Module):
+    def __init__(self, num_nodes, num_rels, h_dim):
+        super(EmbeddingLayer, self).__init__()
+        self.n_embedding = th.nn.Linear(num_nodes, h_dim)
+        self.e_embedding = th.nn.Embedding(num_rels, h_dim)
+        self.num_nodes = num_nodes
+        self.num_rels = num_rels
+        self.h_dim = h_dim
+
+    def forward(self, g, hn, r, he, norm):
+        return self.n_embedding(hn), self.e_embedding(he.squeeze())
 
 class RGCN(BaseRGCN):
+
+    def build_input_layer(self):
+        return EmbeddingLayer(2, self.num_rels, self.h_dim)
+
 
     def build_hidden_layer(self, idx):
         act = F.relu if idx < self.num_hidden_layers - 1 else None
@@ -179,8 +194,9 @@ class PPIModel(nn.Module):
     def forward(self, g):
         features = g.ndata['feat']
         edge_type = g.edata[dgl.ETYPE].long()
+        edge_feat = th.arange(self.num_rels).view(-1, 1).long().cuda()
 
-        x = self.rgcn(g, features, edge_type, None)
+        x, _ = self.rgcn(g, features, edge_type, edge_feat, None)
 
         x = th.flatten(x).view(-1, 286*self.h_dim)
         return th.sigmoid(self.fc(x))
@@ -190,7 +206,7 @@ def load_ppi_data(train_inter_file, test_inter_file):
     index = np.arange(len(train_df))
     np.random.seed(seed=0)
     np.random.shuffle(index)
-    train_df = train_df.iloc[index[:1000]]
+    train_df = train_df.iloc[index[:30000]]
     
     test_df = pd.read_pickle(test_inter_file)
     index = np.arange(len(test_df))
