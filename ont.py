@@ -6,6 +6,7 @@ from xml.etree import ElementTree as ET
 import math
 import utils as u
 import dgl
+
 class Ontology(object):
 
     def __init__(self, filename='data/go.obo', rels=[]):
@@ -68,7 +69,7 @@ class Ontology(object):
         return ont        
         
 
-    def toDGLGraph(self):
+    def toDGLGraph(self, with_disjoint):
         # Consider that there is only one type of nodes 
         ######
         edges = dict()
@@ -98,10 +99,13 @@ class Ontology(object):
         print(('node', 'is_a', 'node'), len(edges[('node', 'is_a', 'node')]))
         for rel in self.rels:
             print(('node', rel, 'node'), len(edges[('node', rel, 'node')]))
+        if with_disjoint:
+            print(('node', 'disjoint_from', 'node'), len(edges[('node', 'disjoint_from', 'node')]))
+
 
         return dgl.heterograph(edges)
 
-    def processChunk(self, chunk, rels=[]):
+    def processChunk(self, chunk, rels=[], with_disjoint = False):
         if chunk[0] != '[Term]':
             return None
         
@@ -113,6 +117,8 @@ class Ontology(object):
         obj['is_a'] = list()
         obj['alt_ids'] = list()
         obj['is_obsolete'] = False
+        if with_disjoint:
+            obj['disjoint_from'] = list()
         
         for line in chunk[1:]:
             key, val = tuple(line.split(": ")[:2])
@@ -128,6 +134,8 @@ class Ontology(object):
                     obj[rel].append(val)
             elif key == 'is_obsolete' and val == 'true':
                 obj['is_obsolete'] = True
+            elif with_disjoint and key == 'disjoint_from':
+                obj['disjoint_from'].append(val.split(' ! ')[0])
         return obj
 
     def get_anchestors(self, term_id):

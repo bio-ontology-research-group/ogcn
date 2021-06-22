@@ -11,6 +11,7 @@ from torch import optim
 from sklearn.metrics import roc_curve, auc, matthews_corrcoef
 import copy
 from torch.utils.data import DataLoader
+from sagpool import SAGNetworkHierarchical, SAGNetworkGlobal
 
 @ck.command()
 @ck.option(
@@ -42,7 +43,7 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
     g = g.to(device)
     annots = th.FloatTensor(annots).to(device)
     train_df, test_df = load_ppi_data(train_inter_file, test_inter_file)
-    model = PPIModel()
+    model = SAGNetworkGlobal(3, 3, 1, num_convs = 2, pool_ratio = 0.5, dropout = 0.1) #PPIModel()
     model.to(device)
     loss_func = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
@@ -58,7 +59,7 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
         model.train()
 
         for iter, (batch, labels) in enumerate(train_set_batches):
-            logits = model(batch)
+            logits = model(batch.to(device))
 
             labels = labels.unsqueeze(1).to(device)
             loss = loss_func(logits, labels)
@@ -76,7 +77,7 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
         with th.no_grad():
 
             for iter, (batch, labels) in enumerate(test_set_batches):
-                logits = model(batch)
+                logits = model(batch.to(device))
                 labels = labels.unsqueeze(1).to(device)
                 loss = loss_func(logits, labels)
                 test_loss += loss.detach().item()
@@ -104,8 +105,8 @@ def get_batches(graph, annots, prot_idx, df, labels, batch_size):
             if p1 not in prot_idx or p2 not in prot_idx:
                 continue
             pi1, pi2 = prot_idx[p1], prot_idx[p2]
-            feat = annots[:, [0, pi1+1, pi2+1]]
-            graph_cp = copy.deepcopy(graph)
+            feat = annots[:, [0, pi1+1, pi2+1]].cpu()
+            graph_cp = copy.deepcopy(graph).cpu()
             graph_cp.ndata['feat'] = feat
             dataset.append((graph_cp, label))
 
@@ -152,7 +153,7 @@ def load_ppi_data(train_inter_file, test_inter_file):
     return train_df, test_df
 
 def load_graph_data(data_file):
-    go = Ontology('data/goslim_yeast.obo')
+    go = Ontology('data/go.obo')
     nodes = list(go.ont.keys())
     node_idx = {v: k for k, v in enumerate(nodes)}
     g = dgl.DGLGraph()

@@ -13,6 +13,7 @@ import copy
 from torch.utils.data import DataLoader
 from RelAtt.relGraphConv import RelGraphConv
 from RelAtt.baseRGCN import BaseRGCN
+from dgl.nn import GraphConv, AvgPooling, MaxPooling
 
 
 
@@ -54,16 +55,17 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
     rels = ['part_of', 'regulates', 'occurs_in']
 
     g, annots, prot_idx = load_graph_data(data_file, rels = rels, with_ic = with_ic)
-    g = g.to(device)
-
+    
     num_rels = len(g.canonical_etypes)
 
  
     g = dgl.to_homogeneous(g)
     
-    annots = th.FloatTensor(annots).to(device)
+    num_nodes = g.number_of_nodes()
+    print(f"Num nodes: {g.number_of_nodes()}")
+    annots = th.FloatTensor(annots)
     train_df, test_df = load_ppi_data(train_inter_file, test_inter_file)
-    model = PPIModel(feat_dim, num_rels, num_rels)
+    model = PPIModel(feat_dim, num_rels, num_rels, num_nodes)
     model.to(device)
     loss_func = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
@@ -79,7 +81,7 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
         model.train()
 
         for iter, (batch, labels) in enumerate(train_set_batches):
-            logits = model(batch)
+            logits = model(batch.to(device))
 
             labels = labels.unsqueeze(1).to(device)
             loss = loss_func(logits, labels)
@@ -97,7 +99,7 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
         with th.no_grad():
 
             for iter, (batch, labels) in enumerate(test_set_batches):
-                logits = model(batch)
+                logits = model(batch.to(device))
                 labels = labels.unsqueeze(1).to(device)
                 loss = loss_func(logits, labels)
                 test_loss += loss.detach().item()
@@ -168,12 +170,13 @@ class RGCN(BaseRGCN):
 
 class PPIModel(nn.Module):
 
-    def __init__(self, h_dim, num_rels, num_bases):
+    def __init__(self, h_dim, num_rels, num_bases, num_nodes):
         super().__init__()
         
         self.h_dim = h_dim
         self.num_rels = num_rels
         self.num_bases = None if num_bases < 0 else num_bases
+        self.num_nodes = num_nodes
 
         print(f"Num rels: {self.num_rels}")
         print(f"Num bases: {self.num_bases}")
@@ -189,7 +192,11 @@ class PPIModel(nn.Module):
                         use_cuda=True
                         )
         
-        self.fc = nn.Linear(286*self.h_dim, 1)
+        # self.avgpool = AvgPooling()
+        # self.maxpool = MaxPooling()   
+        # self.fc =  nn.Linear(4, 1)
+
+        self.fc = nn.Linear(self.num_nodes*self.h_dim, 1)
         
     def forward(self, g):
         features = g.ndata['feat']
@@ -198,7 +205,9 @@ class PPIModel(nn.Module):
 
         x, _ = self.rgcn(g, features, edge_type, edge_feat, None)
 
-        x = th.flatten(x).view(-1, 286*self.h_dim)
+        #x = th.cat([self.avgpool(g, x), self.maxpool(g, x)], dim=-1)
+
+        x = th.flatten(x).view(-1, self.num_nodes*self.h_dim)
         return th.sigmoid(self.fc(x))
         
 def load_ppi_data(train_inter_file, test_inter_file):
@@ -206,7 +215,7 @@ def load_ppi_data(train_inter_file, test_inter_file):
     index = np.arange(len(train_df))
     np.random.seed(seed=0)
     np.random.shuffle(index)
-    train_df = train_df.iloc[index[:30000]]
+    train_df = train_df.iloc[index[:10000]]
     
     test_df = pd.read_pickle(test_inter_file)
     index = np.arange(len(test_df))
