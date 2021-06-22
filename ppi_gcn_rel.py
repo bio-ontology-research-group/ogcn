@@ -54,7 +54,7 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
 
     rels = ['part_of', 'regulates', 'occurs_in']
 
-    g, annots, prot_idx = load_graph_data(data_file, rels = rels, with_ic = with_ic)
+    g, annots, prot_idx = load_graph_data(data_file, rels = rels, with_ic = with_ic, with_disjoint = True)
     
     num_rels = len(g.canonical_etypes)
 
@@ -172,7 +172,7 @@ class PPIModel(nn.Module):
                         self.num_rels, 
                         self.num_bases,
                         num_hidden_layers=2, 
-                        dropout=0.1,
+                        dropout=0.2,
                         use_self_loop=False, 
                         use_cuda=True
                         )
@@ -208,8 +208,8 @@ def load_ppi_data(train_inter_file, test_inter_file):
     test_df = test_df.iloc[index[:1000]]
     return train_df, test_df
 
-def load_graph_data(data_file, rels = [], with_ic = False):
-    go = Ontology('data/go.obo', rels)
+def load_graph_data(data_file, rels = [], with_ic = False, with_disjoint = False):
+    go = Ontology('data/go.obo', rels, with_disjoint)
     nodes = list(go.ont.keys())
     node_idx = {v: k for k, v in enumerate(nodes)}
    

@@ -9,11 +9,11 @@ import dgl
 
 class Ontology(object):
 
-    def __init__(self, filename='data/go.obo', rels=[]):
+    def __init__(self, filename='data/go.obo', rels=[], with_disjoint=False):
         self.rels = rels
+        self.with_disjoint = with_disjoint
         self.ont = self.load(filename, self.rels)
         self.ic = None
-        
 
     def has_term(self, term_id):
         return term_id in self.ont
@@ -69,13 +69,16 @@ class Ontology(object):
         return ont        
         
 
-    def toDGLGraph(self, with_disjoint):
+    def toDGLGraph(self):
         # Consider that there is only one type of nodes 
         ######
         edges = dict()
         edges[('node', 'is_a', 'node')] = list()
         for rel in self.rels:
             edges[('node', rel, 'node')] = list()
+        if self.with_disjoint:
+            edges[('node', 'disjoint_from', 'node')] = list()
+
 
         nodes = list(self.ont.keys())
         node_idx = {v: k for k, v in enumerate(nodes)}
@@ -95,17 +98,23 @@ class Ontology(object):
                         dst = node_idx[dst_id]
                         edges[('node', rel, 'node')].append([src, dst])
 
-        
+            if self.with_disjoint:
+                #disjoint_from relation
+                for dst_id in self.ont[n_id]['disjoint_from']:
+                    dst = node_idx[dst_id]
+                    edges[('node', 'disjoint_from', 'node')].append([src, dst])
+
+
         print(('node', 'is_a', 'node'), len(edges[('node', 'is_a', 'node')]))
         for rel in self.rels:
             print(('node', rel, 'node'), len(edges[('node', rel, 'node')]))
-        if with_disjoint:
+        if self.with_disjoint:
             print(('node', 'disjoint_from', 'node'), len(edges[('node', 'disjoint_from', 'node')]))
 
 
         return dgl.heterograph(edges)
 
-    def processChunk(self, chunk, rels=[], with_disjoint = False):
+    def processChunk(self, chunk, rels=[]):
         if chunk[0] != '[Term]':
             return None
         
@@ -117,7 +126,7 @@ class Ontology(object):
         obj['is_a'] = list()
         obj['alt_ids'] = list()
         obj['is_obsolete'] = False
-        if with_disjoint:
+        if self.with_disjoint:
             obj['disjoint_from'] = list()
         
         for line in chunk[1:]:
@@ -134,7 +143,7 @@ class Ontology(object):
                     obj[rel].append(val)
             elif key == 'is_obsolete' and val == 'true':
                 obj['is_obsolete'] = True
-            elif with_disjoint and key == 'disjoint_from':
+            elif self.with_disjoint and key == 'disjoint_from':
                 obj['disjoint_from'].append(val.split(' ! ')[0])
         return obj
 
