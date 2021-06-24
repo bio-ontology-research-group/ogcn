@@ -126,7 +126,7 @@ def load_ppi_data(train_inter_file, test_inter_file):
     return train_df, test_df
 
 def load_graph_data(data_file):
-    go = Ontology('data/goslim_yeast.obo')
+    go = Ontology('data/goslim_yeast.obo', with_rels=True)
     nodes = list(go.ont.keys())
     node_idx = {v: k for k, v in enumerate(nodes)}
     g = dgl.DGLGraph()
