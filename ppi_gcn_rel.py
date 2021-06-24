@@ -172,7 +172,7 @@ class PPIModel(nn.Module):
                         self.num_rels, 
                         self.num_bases,
                         num_hidden_layers=2, 
-                        dropout=0.2,
+                        dropout=0.1,
                         use_self_loop=False, 
                         use_cuda=True
                         )

@@ -12,6 +12,14 @@ from sklearn.metrics import roc_curve, auc, matthews_corrcoef
 import copy
 from torch.utils.data import DataLoader
 from sagpool import SAGNetworkHierarchical, SAGNetworkGlobal
+import random
+
+import logging
+logging.basicConfig(level=logging.INFO)
+
+th.manual_seed(0)
+np.random.seed(0)
+random.seed(0)
 
 @ck.command()
 @ck.option(
@@ -37,13 +45,18 @@ from sagpool import SAGNetworkHierarchical, SAGNetworkGlobal
     help='Training epochs')
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
+
+
 def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, batch_size, epochs, load):
     device = 'cuda'
     g, annots, prot_idx = load_graph_data(data_file)
+    logging.info("Graph loaded")
     g = g.to(device)
     annots = th.FloatTensor(annots).to(device)
     train_df, test_df = load_ppi_data(train_inter_file, test_inter_file)
-    model = SAGNetworkGlobal(3, 3, 1, num_convs = 2, pool_ratio = 0.5, dropout = 0.1) #PPIModel()
+    num_nodes = g.number_of_nodes()
+    model = SAGNetworkGlobal(2, 2, 1, num_convs = 2, num_nodes = num_nodes, pool_ratio = 0.5, dropout = 0.1) #PPIModel()
+    logging.info("Model created")
     model.to(device)
     loss_func = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
@@ -52,7 +65,7 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
 
     train_set_batches = get_batches(g, annots, prot_idx, train_df, train_labels, batch_size)
     test_set_batches = get_batches(g, annots, prot_idx, test_df, test_labels, batch_size)
-
+    logging.info("Train and test datasets created")
 
     for epoch in range(epochs):
         epoch_loss = 0
@@ -105,7 +118,7 @@ def get_batches(graph, annots, prot_idx, df, labels, batch_size):
             if p1 not in prot_idx or p2 not in prot_idx:
                 continue
             pi1, pi2 = prot_idx[p1], prot_idx[p2]
-            feat = annots[:, [0, pi1+1, pi2+1]].cpu()
+            feat = annots[:, [pi1, pi2]].cpu()
             graph_cp = copy.deepcopy(graph).cpu()
             graph_cp.ndata['feat'] = feat
             dataset.append((graph_cp, label))
@@ -123,10 +136,10 @@ class PPIModel(nn.Module):
 
     def __init__(self, *args, **kwargs):
         super().__init__()
-        self.gcn1 = dglnn.GraphConv(3, 3)
-        self.gcn2 = dglnn.GraphConv(3, 3)
-        self.gcn3 = dglnn.GraphConv(3, 3)
-        self.fc = nn.Linear(286*3, 1)
+        self.gcn1 = dglnn.GraphConv(2, 2)
+        self.gcn2 = dglnn.GraphConv(2, 2)
+        self.gcn3 = dglnn.GraphConv(2, 2)
+        self.fc = nn.Linear(286*2, 1)
         
     def forward(self, g):
         features = g.ndata['feat']
@@ -135,7 +148,7 @@ class PPIModel(nn.Module):
         x = self.gcn2(g, x)
         x = F.relu(x)
 
-        x = th.flatten(x).view(-1, 286*3)
+        x = th.flatten(x).view(-1, 286*2)
         return th.sigmoid(self.fc(x))
         
 def load_ppi_data(train_inter_file, test_inter_file):
@@ -143,7 +156,7 @@ def load_ppi_data(train_inter_file, test_inter_file):
     index = np.arange(len(train_df))
     np.random.seed(seed=0)
     np.random.shuffle(index)
-    train_df = train_df.iloc[index[:10000]]
+    train_df = train_df.iloc[index[:1000]]
     
     test_df = pd.read_pickle(test_inter_file)
     index = np.arange(len(test_df))
@@ -153,7 +166,7 @@ def load_ppi_data(train_inter_file, test_inter_file):
     return train_df, test_df
 
 def load_graph_data(data_file):
-    go = Ontology('data/go.obo')
+    go = Ontology('data/goslim_yeast.obo')
     nodes = list(go.ont.keys())
     node_idx = {v: k for k, v in enumerate(nodes)}
     g = dgl.DGLGraph()
@@ -168,16 +181,16 @@ def load_graph_data(data_file):
     df = df[df['orgs'] == '559292']
     go.calculate_ic(df['prop_annotations'])
     
-    annotations = np.zeros((len(nodes), len(df) + 1), dtype=np.float32)
-    for i, go_id in enumerate(go.ont.keys()):
-        annotations[i, 0] = go.get_ic(go_id)
+    annotations = np.zeros((len(nodes), len(df)), dtype=np.float32)
+    # for i, go_id in enumerate(go.ont.keys()):
+    #     annotations[i, 0] = go.get_ic(go_id)
     prot_idx = {}
     for i, row in enumerate(df.itertuples()):
         prot_id = row.accessions.split(';')[0]
         prot_idx[prot_id] = i
         for go_id in row.prop_annotations:
             if go_id in node_idx:
-                annotations[node_idx[go_id], i + 1] = 1
+                annotations[node_idx[go_id], i] = 1
 
     return g, annotations, prot_idx
     

@@ -13,7 +13,11 @@ import copy
 from torch.utils.data import DataLoader
 from sagpool import SAGNetworkHierarchical
 from dgl.nn import GraphConv, AvgPooling, MaxPooling
+import random
 
+th.manual_seed(0)
+np.random.seed(0)
+random.seed(0)
 
 @ck.command()
 @ck.option(
@@ -39,6 +43,8 @@ from dgl.nn import GraphConv, AvgPooling, MaxPooling
     help='Training epochs')
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
+
+
 def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, batch_size, epochs, load):
     device = 'cuda'
     g, annots, prot_idx = load_graph_data(data_file)
@@ -150,7 +156,7 @@ def load_ppi_data(train_inter_file, test_inter_file):
     index = np.arange(len(train_df))
     np.random.seed(seed=0)
     np.random.shuffle(index)
-    train_df = train_df.iloc[index[:10000]]
+    train_df = train_df.iloc[index[:1000]]
     
     test_df = pd.read_pickle(test_inter_file)
     index = np.arange(len(test_df))
@@ -160,7 +166,8 @@ def load_ppi_data(train_inter_file, test_inter_file):
     return train_df, test_df
 
 def load_graph_data(data_file):
-    go = Ontology('data/go.obo')
+    go = Ontology('data/goslim_yeast.obo')
+
     nodes = list(go.ont.keys())
     node_idx = {v: k for k, v in enumerate(nodes)}
     g = dgl.DGLGraph()
