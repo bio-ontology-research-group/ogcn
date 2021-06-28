@@ -86,6 +86,7 @@ def main(data_file, inter_file, pheno_file, out_file):
     go_cnt = Counter()
     hp_cnt = Counter()
 
+    index = []
     for i, row in df.iterrows():
         gene_id = row.genes
         if gene_id in phenos:
