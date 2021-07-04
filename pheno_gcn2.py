@@ -26,7 +26,7 @@ import rdflib as rdf
     '--terms-file', '-tf', default='data/hp_terms.csv',
     help='Data file with sequences and complete set of annotations')
 @ck.option(
-    '--gos-file', '-gf', default='data/go_terms.csv',
+    '--gos-file', '-gf', default='data/nodes.csv',
     help='DataFrame with list of GO classes (as features)')
 @ck.option(
     '--deepgo-model', '-dm', default='data/deepgoplus.h5',
@@ -35,7 +35,7 @@ import rdflib as rdf
     '--model-file', '-mf', default='data/pheno.model.h5',
     help='Prediction model')
 @ck.option(
-    '--batch-size', '-bs', default=1,
+    '--batch-size', '-bs', default=16,
     help='Batch size for training')
 @ck.option(
     '--epochs', '-ep', default=32,
@@ -43,7 +43,7 @@ import rdflib as rdf
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
 def main(hp_file, data_file, terms_file, gos_file, deepgo_model, model_file, batch_size, epochs, load):
-    device = 'cuda:0'
+    device = 'cuda:1'
     gos_df = pd.read_csv(gos_file)
     gos = gos_df['terms'].values.flatten()
     gos_dict = {v: i for i, v in enumerate(gos)}
@@ -61,52 +61,56 @@ def main(hp_file, data_file, terms_file, gos_file, deepgo_model, model_file, bat
     term_set = set(terms)
     terms_dict = {v: i for i, v in enumerate(terms)}
     
-    g, annots, labels, train_nids, test_nids = load_graph_data(data_file, gos_dict, terms_dict)
+    g, etypes, annots, labels, train_nids, valid_nids, test_nids = load_graph_data(data_file, gos_dict, terms_dict)
     g = g.to(device)
+    etypes = etypes.to(device)
     annots = th.FloatTensor(annots).to(device)
     labels = th.FloatTensor(labels).to(device)
+
+    train_dataset = MyDataset(g, etypes, annots, train_nids, labels)
+    train_batches, train_steps = get_batches(train_dataset, batch_size)
     
     model = PhenoModel(len(gos), len(terms))
     model.to(device)
     loss_func = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
     for epoch in range(epochs):
         epoch_loss = 0
         model.train()
-        with ck.progressbar(train_nids) as bar:
-            for nid in bar:
-                feat = annots[nid, :].view(-1, 1)
-                label = labels[nid, :].view(1, -1)
-                logits = model(g, feat)
+        with ck.progressbar(train_batches) as bar:
+            for batch_g, batch_etypes, batch_feat, batch_labels in bar:
+                # feat = annots[nid, :].view(-1, 1)
+                # label = labels[nid, :].view(1, -1)
+                logits = model(batch_g, batch_etypes, batch_feat)
                 
-                loss = loss_func(logits, label)
+                loss = loss_func(logits, batch_labels)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.detach().cpu()
                 
-            epoch_loss /= len(train_nids)
+            epoch_loss /= train_steps
 
         
         model.eval()
-        test_loss = 0
+        valid_loss = 0
         preds = []
         with th.no_grad():
-            with ck.progressbar(test_nids) as bar:
+            with ck.progressbar(valid_nids) as bar:
                 for n_id in bar:
                     feat = annots[n_id, :].view(-1, 1)
                     label = labels[n_id, :].view(1, -1)
-                    logits = model(g, feat)
+                    logits = model(g, etypes, feat)
                     loss = loss_func(logits, label)
-                    test_loss += loss.detach().cpu()
+                    valid_loss += loss.detach().cpu()
                     preds = np.append(preds, logits.detach().cpu())
-            test_loss /= len(test_nids)
+                valid_loss /= len(valid_nids)
 
-        test_labels = labels[test_nids, :].detach().cpu().numpy()
-        roc_auc = compute_roc(test_labels, preds)
-        fmax = compute_fmax(test_labels, preds.reshape(len(test_nids), len(terms)))
-        print(f'Epoch {epoch}: Loss - {epoch_loss}, Test loss - {test_loss}, AUC - {roc_auc}, Fmax - {fmax}')
+        valid_labels = labels[valid_nids, :].detach().cpu().numpy()
+        roc_auc = compute_roc(valid_labels, preds)
+        fmax = compute_fmax(valid_labels, preds.reshape(len(valid_nids), len(terms)))
+        print(f'Epoch {epoch}: Loss - {epoch_loss}, Valid loss - {valid_loss}, AUC - {roc_auc}, Fmax - {fmax}')
 
 def compute_roc(labels, preds):
     # Compute ROC curve and ROC area for each class
@@ -138,8 +142,9 @@ def compute_fmax(labels, preds):
 
 class MyDataset(IterableDataset):
 
-    def __init__(self, graph, annots, ids, labels):
+    def __init__(self, graph, etypes, annots, ids, labels):
         self.graph = graph
+        self.etypes = etypes
         self.annots = annots
         self.labels = labels
         self.ids = ids
@@ -148,55 +153,53 @@ class MyDataset(IterableDataset):
         for nid in self.ids:
             label = self.labels[nid].view(1, -1)
             feat = self.annots[nid, :].view(-1, 1)
-            yield (self.graph, feat, label)
+            yield (self.graph, self.etypes, feat, label)
 
     def __iter__(self):
         return self.get_data()
-    
+
+    def __len__(self):
+        return len(self.ids)
 
 def get_batches(dataset, batch_size):
-    return DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate)
-    
+    steps = int(math.ceil(len(dataset) / batch_size))
+    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate)
+    return data_loader, steps
+
 def collate(samples):
     # The input `samples` is a list of pairs
     #  (graph, label).
-    graphs, features, labels = map(list, zip(*samples))
+    graphs, etypes, features, labels = map(list, zip(*samples))
     batched_graph = dgl.batch(graphs)
-    return batched_graph, th.cat(features, dim=0), th.cat(labels, dim=0)
+    return batched_graph, th.cat(etypes, dim=0), th.cat(features, dim=0), th.cat(labels, dim=0)
 
 
 class PhenoModel(nn.Module):
 
     def __init__(self, nb_gos, nb_classes):
         super().__init__()
-        self.gcn1 = dglnn.GraphConv(1, 1)
-        self.gcn2 = dglnn.GraphConv(1, 1)
-        self.gcn3 = dglnn.GraphConv(1, 1)
+        self.gcn1 = dglnn.RelGraphConv(1, 1, 11)
+        self.gcn2 = dglnn.RelGraphConv(1, 1, 11)
+        self.gcn3 = dglnn.RelGraphConv(1, 1, 11)
         self.nb_gos = nb_gos
         self.nb_classes = nb_classes
         self.fc = nn.Linear(nb_gos, nb_classes)
         
-    def forward(self, g, features=None):
+    def forward(self, g, etypes, features=None):
         if features is None:
             features = g.ndata['feat']
-        # x = self.gcn1(g, features)
-        # x = self.gcn2(g, x)
-        x = features
+        x = self.gcn1(g, features, etypes)
+        x = self.gcn2(g, x, etypes)
+        # x = features
         x = th.flatten(x).view(-1, self.nb_gos)
         return th.sigmoid(self.fc(x))
 
 
 def load_graph_data(data_file, gos_dict, terms_dict):
-    rg = rdf.Graph().parse(data=open('data/go.owl').read())
-
-    
-    g = dgl.DGLGraph()
-    g.add_nodes(len(gos_dict))
-    for g_id in gos_dict:
-        parents = go.get_parents(g_id)
-        parents_idx = [gos_dict[go_id] for go_id in parents if go_id in gos_dict]
-        g.add_edges(gos_dict[g_id], parents_idx)
-    g = dgl.add_self_loop(g)
+    graphs, data_dict = dgl.load_graphs('data/go.bin')
+    g = graphs[0]
+    etypes = data_dict['etypes']
+    # g = dgl.add_self_loop(g)
 
     df = pd.read_pickle(data_file)
     #Filter out proteins without pheno annotations
@@ -209,22 +212,27 @@ def load_graph_data(data_file, gos_dict, terms_dict):
     index = np.arange(len(df))
     np.random.seed(seed=0)
     np.random.shuffle(index)
-    train_n = int(len(df) * .9)
-    train_nids = index[:train_n]
+    train_n = int(len(df) * .8)
+    valid_n = int(train_n * .9)
+    train_nids = index[:valid_n]
+    valid_nids = index[valid_n:train_n]
     test_nids = index[train_n:]
+
+    print(f'Train: {len(train_nids)}, Valid: {len(valid_nids)}, Test: {len(test_nids)}')
     
     annotations = np.zeros((len(df), len(gos_dict)), dtype=np.float32)
     labels = np.zeros((len(df), len(terms_dict)), dtype=np.float32)
     
     for i, row in enumerate(df.itertuples()):
-        for go_id in row.prop_annotations:
+        for go_id in row.dg_annotations:
             if go_id in gos_dict:
-                annotations[i, gos_dict[go_id]] = 1
+                annotations[i, gos_dict[go_id]] = row.dg_annotations[go_id]
+        annotations[i, gos_dict[row.proteins]] = 1
         for hp_id in row.prop_phenotypes:
             if hp_id in terms_dict:
                 labels[i, terms_dict[hp_id]] = 1
 
-    return g, annotations, labels, train_nids, test_nids
+    return g, etypes, annotations, labels, train_nids, valid_nids, test_nids
     
 if __name__ == '__main__':
     main()

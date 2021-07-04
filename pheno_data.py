@@ -17,26 +17,40 @@ ORG_ID = '9606'
     '--data-file', '-df', default='data/swissprot_human.pkl',
     help='Result file with a list of proteins, sequences and annotations')
 @ck.option(
+    '--deepgo-file', '-dgf', default='data/swissprot_human_dg.gz',
+    help='DeepGO predictions')
+@ck.option(
     '--inter-file', '-if', default=f'data/{ORG_ID}.protein.links.detailed.v11.0.txt.gz',
     help='Data file with protein sequences')
 @ck.option('--pheno-file', default=f'data/genes_to_phenotype.txt', help='')
 @ck.option(
     '--out-file', '-of', default=f'data/data_human.pkl',
     help='Data file with protein sequences')
-def main(data_file, inter_file, pheno_file, out_file):
+def main(data_file, deepgo_file, inter_file, pheno_file, out_file):
     hpo = Ontology('data/hp.obo')
     df = pd.read_pickle(data_file)
-    uni_pros = set()
     st_pros = set()
     st2uni = {}
     for i, row in enumerate(df.itertuples()):
-        uni_ids = [x.strip() for x in row.accessions.split(';')][:1]
         prot_id = row.proteins
-        uni_pros |= set(uni_ids)
         st_pros |= set(row.string_ids)
         for st_id in row.string_ids:
             st2uni[st_id] = prot_id
     proteins = set(df['proteins'].values)
+
+    deepgo = {}
+    with gzip.open(deepgo_file, 'rt') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            it = line.split('\t')
+            p_id = it[0]
+            go_id = it[1]
+            score = float(it[5])
+            if p_id not in deepgo:
+                deepgo[p_id] = {}
+            deepgo[p_id][go_id] = score
     
     interactions = {}
     with gzip.open(inter_file, 'rt') as f:
@@ -83,6 +97,7 @@ def main(data_file, inter_file, pheno_file, out_file):
 
     phenotypes = []
     prop_phenotypes = []
+    dg_annotations = []
     go_cnt = Counter()
     hp_cnt = Counter()
 
@@ -98,9 +113,16 @@ def main(data_file, inter_file, pheno_file, out_file):
         else:
             phenotypes.append([])
             prop_phenotypes.append([])
+        prot_id = row.proteins
+        if prot_id in deepgo:
+            dg_annotations.append(deepgo[prot_id])
+            go_cnt.update(deepgo[prot_id].keys())
+        else:
+            dg_annotations.append({})
     df['interactions'] = inters
     df['phenotypes'] = phenotypes
     df['prop_phenotypes'] = prop_phenotypes
+    df['dg_annotations'] = dg_annotations
 
     df.to_pickle(out_file)
 
@@ -110,8 +132,9 @@ def main(data_file, inter_file, pheno_file, out_file):
 
     hp_terms = [hp_id for hp_id, cnt in hp_cnt.items() if cnt >= 10]
     go_terms = [go_id for go_id, cnt in go_cnt.items()]
+    go_terms += list(proteins)
     go_df = pd.DataFrame({'terms': go_terms})
-    go_df.to_csv('data/go_terms.csv')
+    go_df.to_csv('data/nodes.csv')
     hp_df = pd.DataFrame({'terms': hp_terms})
     hp_df.to_csv('data/hp_terms.csv')
 
