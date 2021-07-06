@@ -14,8 +14,10 @@ from torch.utils.data import DataLoader
 from dgl.nn.pytorch import RelGraphConv
 from baseRGCN import BaseRGCN
 from dgl.nn import GraphConv, AvgPooling, MaxPooling
-
-
+import random
+th.manual_seed(0)
+np.random.seed(0)
+random.seed(0)
 
 
 @ck.command()
@@ -52,9 +54,9 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
         feat_dim = 2
 
 
-    rels = ['part_of', 'regulates', 'occurs_in']
+    rels = ['part_of', 'regulates'] #, 'has_part', 'occurs_in']
 
-    g, annots, prot_idx = load_graph_data(data_file, rels = rels, with_ic = with_ic, with_disjoint = True)
+    g, annots, prot_idx = load_graph_data(data_file, rels = rels, with_ic = with_ic, with_disjoint = False, with_intersection = False, inverse = False)
     
     num_rels = len(g.canonical_etypes)
 
@@ -208,8 +210,8 @@ def load_ppi_data(train_inter_file, test_inter_file):
     test_df = test_df.iloc[index[:1000]]
     return train_df, test_df
 
-def load_graph_data(data_file, rels = [], with_ic = False, with_disjoint = False):
-    go = Ontology('data/go.obo', rels, with_disjoint)
+def load_graph_data(data_file, rels = [], with_ic = False, with_disjoint = False, with_intersection = False, inverse = False):
+    go = Ontology('data/go.obo', rels, with_disjoint, with_intersection, inverse)
     nodes = list(go.ont.keys())
     node_idx = {v: k for k, v in enumerate(nodes)}
    

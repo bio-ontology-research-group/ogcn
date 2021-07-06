@@ -366,6 +366,7 @@ class RelGraphConv(nn.Module):
         """
         logging.debug("HN: " + str(nfeat.shape))
         logging.debug("HE: " + str(efeat.shape))
+        logging.debug("etypes : " + str(etypes.shape))
 
 #        efeat = th.nn.Embedding(self.num_rels, self.out_feat)(efeat.squeeze())
 
@@ -377,7 +378,7 @@ class RelGraphConv(nn.Module):
                 raise DGLError('"etypes" tensor must have length equal to the number of edges'
                                ' in the graph. But got {} and {}.'.format(
                                    len(etypes), g.num_edges()))
-            if self.low_mem and not (feat.dtype == th.int64 and feat.ndim == 1):
+            if self.low_mem and not (nfeat.dtype == th.int64 and nfeat.ndim == 1):
                 # Low-mem optimization is not enabled for node ID input. When enabled,
                 # it first sorts the graph based on the edge types (the sorting will not
                 # change the node IDs). It then converts the etypes tensor to an integer
@@ -404,18 +405,29 @@ class RelGraphConv(nn.Module):
 
             g.ndata['z'] = hn
             he = self.shared(efeat)
+            logging.debug("HEeee: " + str(he.shape))
+            logging.debug("ETypes: " + str(etypes))
+
+            #z = he[etypes]
 
 
-            logging.debug("HE in train: " + str(he.shape))
+#            logging.debug("ZZZZ : " + str(z.shape))
 
-            for index, canonical_etype in enumerate(g.canonical_etypes):
-                _, _, eid = g.all_edges(form='all', etype=canonical_etype)
-                n = len(eid)
+            zeta = []
+            logging.debug("num rels: " + str(self.num_rels))
 
+            for index, num_edges_type in enumerate(etypes):
+                logging.debug("Index: " + str(index))
                 z = he[index]
+
                 z = z.unsqueeze(1)
-                z = th.tile(z,(n,))
-                g.edges[canonical_etype].data['z'] = th.transpose(z, 0, 1)
+                z = th.tile(z,(num_edges_type,))
+                z = th.transpose(z, 0, 1)
+                zeta.append(z)
+
+            zeta = th.cat(zeta, dim = 0)
+               
+            g.edata['z'] = zeta
 
             g.apply_edges(self.edge_attention)
             g.edata['norm'] = self.attn_drop(edge_softmax(g, g.edata['norm']))

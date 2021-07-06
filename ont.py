@@ -9,9 +9,11 @@ import dgl
 
 class Ontology(object):
 
-    def __init__(self, filename='data/go.obo', rels=[], with_disjoint=False):
+    def __init__(self, filename='data/go.obo', rels=[], with_disjoint=False, with_intersection = False, inverse = False):
         self.rels = rels
         self.with_disjoint = with_disjoint
+        self.inverse = inverse
+        self.with_intersection = with_intersection
         self.ont = self.load(filename, self.rels)
         self.ic = None
 
@@ -74,15 +76,20 @@ class Ontology(object):
         ######
         edges = dict()
         edges[('node', 'is_a', 'node')] = list()
+        if self.inverse:
+            edges[('node', 'super', 'node')] = list()
         for rel in self.rels:
             edges[('node', rel, 'node')] = list()
         if self.with_disjoint:
             edges[('node', 'disjoint_from', 'node')] = list()
+        if self.with_intersection:
+            edges[('node', 'projects', 'node')] = list()
 
 
         nodes = list(self.ont.keys())
         node_idx = {v: k for k, v in enumerate(nodes)}
 
+        projected_rels = []
         for n_id in nodes:
             src = node_idx[n_id]
 
@@ -90,6 +97,8 @@ class Ontology(object):
             for dst_id in self.ont[n_id]['is_a']:
                 dst = node_idx[dst_id]
                 edges[('node', 'is_a', 'node')].append([src, dst])
+                if self.inverse:
+                    edges[('node', 'super', 'node')].append([dst, src])
 
             #other relations
             for rel in self.rels:
@@ -104,12 +113,32 @@ class Ontology(object):
                     dst = node_idx[dst_id]
                     edges[('node', 'disjoint_from', 'node')].append([src, dst])
 
+            if self.with_intersection:
+                for dst_id in self.ont[n_id]['intersection_of']:
+                    dst = node_idx[dst_id]
+                    edges[('node', 'projects', 'node')].append([dst, src])
+                
+                for rel in self.rels:
+                    projected_rel = 'projects_' + rel
+                    if projected_rel in self.ont[n_id]:
+                        if not ('node', projected_rel, 'node') in edges:
+                            edges[('node', projected_rel, 'node')] = list()
+                            projected_rels.append(projected_rel)
+                        for dst_id in self.ont[n_id][projected_rel]:
+                            dst = node_idx[dst_id]
+                            edges[('node', projected_rel , 'node')].append([dst, src])
 
         print(('node', 'is_a', 'node'), len(edges[('node', 'is_a', 'node')]))
+        if self.inverse:
+            print(('node', 'super', 'node'), len(edges[('node', 'super', 'node')]))
         for rel in self.rels:
             print(('node', rel, 'node'), len(edges[('node', rel, 'node')]))
         if self.with_disjoint:
             print(('node', 'disjoint_from', 'node'), len(edges[('node', 'disjoint_from', 'node')]))
+        if self.with_intersection:
+            print(('node', 'projects', 'node'), len(edges[('node', 'projects', 'node')]))
+            for rel in projected_rels:
+                print(('node', rel, 'node'), len(edges[('node', rel, 'node')]))
 
 
         return dgl.heterograph(edges)
@@ -128,6 +157,8 @@ class Ontology(object):
         obj['is_obsolete'] = False
         if self.with_disjoint:
             obj['disjoint_from'] = list()
+        if self.with_intersection:
+            obj['intersection_of'] = list()
         
         for line in chunk[1:]:
             key, val = tuple(line.split(": ")[:2])
@@ -145,6 +176,16 @@ class Ontology(object):
                 obj['is_obsolete'] = True
             elif self.with_disjoint and key == 'disjoint_from':
                 obj['disjoint_from'].append(val.split(' ! ')[0])
+            elif self.with_intersection and key == 'intersection_of':
+                values = val.split(' ! ')[0]
+                if values[:2] == "GO":
+                    obj['intersection_of'].append(val.split(' ! ')[0])
+                else:
+                    rel, dst = values.split(" ")
+                    rel = "projects_" + rel
+                    if not rel in obj:
+                        obj[rel] = list()
+                    obj[rel].append(dst)
         return obj
 
     def get_anchestors(self, term_id):

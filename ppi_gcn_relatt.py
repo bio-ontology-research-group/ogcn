@@ -14,8 +14,11 @@ from torch.utils.data import DataLoader
 from RelAtt.relGraphConv import RelGraphConv
 from RelAtt.baseRGCN import BaseRGCN
 from dgl.nn import GraphConv, AvgPooling, MaxPooling
+import random
 
-
+th.manual_seed(0)
+np.random.seed(0)
+random.seed(0)
 
 
 @ck.command()
@@ -51,18 +54,23 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
     else:
         feat_dim = 2
 
+    with_disjoint = False
+    with_intersection = False
+    inverse = False
 
-    rels = ['part_of', 'regulates', 'occurs_in']
+    rels = ['part_of', 'regulates']
 
-    g, annots, prot_idx = load_graph_data(data_file, rels = rels, with_ic = with_ic, with_disjoint = True)
+    g, annots, prot_idx = load_graph_data(data_file, rels = rels, with_ic = with_ic, with_disjoint = with_disjoint, with_intersection = with_intersection, inverse = inverse)
     
     num_rels = len(g.canonical_etypes)
 
  
     g = dgl.to_homogeneous(g)
+
+    #print("HOMOGENOUS GRAPH: " + str(g.number_of_edges()))
     
     num_nodes = g.number_of_nodes()
-    print(f"Num nodes: {g.number_of_nodes()}")
+    print(f"Num nodes: {num_nodes}")
     annots = th.FloatTensor(annots)
     train_df, test_df = load_ppi_data(train_inter_file, test_inter_file)
     model = PPIModel(feat_dim, num_rels, num_rels, num_nodes)
@@ -166,7 +174,7 @@ class RGCN(BaseRGCN):
         act = F.relu if idx < self.num_hidden_layers - 1 else None
         return RelGraphConv(self.h_dim, self.h_dim, self.num_rels, "basis",
                 self.num_bases, activation=act, self_loop=True,
-                dropout=self.dropout)
+                dropout=self.dropout, low_mem = True)
 
 class PPIModel(nn.Module):
 
@@ -187,7 +195,7 @@ class PPIModel(nn.Module):
                         self.num_rels, 
                         self.num_bases,
                         num_hidden_layers=2, 
-                        dropout=0.1,
+                        dropout=0.3,
                         use_self_loop=False, 
                         use_cuda=True
                         )
@@ -224,8 +232,8 @@ def load_ppi_data(train_inter_file, test_inter_file):
     test_df = test_df.iloc[index[:1000]]
     return train_df, test_df
 
-def load_graph_data(data_file, rels = [], with_ic = False, with_disjoint = False):
-    go = Ontology('data/go.obo', rels, with_disjoint)
+def load_graph_data(data_file, rels = [], with_ic = False, with_disjoint = False, with_intersection = False, inverse = True):
+    go = Ontology('data/go.obo', rels, with_disjoint, with_intersection, inverse)
     nodes = list(go.ont.keys())
     node_idx = {v: k for k, v in enumerate(nodes)}
    
