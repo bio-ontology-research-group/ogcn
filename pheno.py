@@ -113,27 +113,8 @@ def main(hp_file, data_file, terms_file, gos_file, model_file,
     print('Loading data')
     g, features, labels, train_nids, test_nids, test_df = load_data(data_file, terms_dict, gos_dict, fold)
     net = Net(len(gos), len(terms)).to(device)
-    # g, features, labels, train_nids, test_nids = g.to(device), features.to(device), labels.to(device), train_nids.to(device), test_nids.to(device)
-    features, labels = features.to(device), labels.to(device)
     print(net)
-    sampler = dgl.dataloading.MultiLayerFullNeighborSampler(2)
-    dataloader = dgl.dataloading.NodeDataLoader(
-        g, train_nids, sampler,
-        batch_size=4,
-        shuffle=True,
-        drop_last=True,
-        num_workers=4,
-        device=device
-    )
 
-    test_dataloader = dgl.dataloading.NodeDataLoader(
-        g, test_nids, sampler,
-        batch_size=4,
-        shuffle=True,
-        drop_last=True,
-        num_workers=4,
-        device=device
-    )
     optimizer = th.optim.Adam(net.parameters(), lr=1e-2)
     best_loss = 10000.0
     if not load:
@@ -145,23 +126,22 @@ def main(hp_file, data_file, terms_file, gos_file, model_file,
             with ck.progressbar(length=train_steps) as bar:
                 for input_nodes, output_nodes, blocks in dataloader:
                     bar.update(1)
-                    # blocks = [b.to(th.device(device)) for b in blocks]
-                    logits = net(blocks, features[input_nodes])
-                    loss = F.binary_cross_entropy(logits, labels[output_nodes])
+                    blocks = [b.to(th.device(device)) for b in blocks]
+                    logits = net(blocks, features[input_nodes].to(device))
+                    loss = F.binary_cross_entropy(logits, labels[output_nodes].to(device))
+                    train_loss += loss.detach().item()
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
-                    train_loss += loss.detach().item()
-                    
             train_loss /= train_steps
             net.eval()
             with th.no_grad():
                 test_loss = 0
                 test_steps = len(test_nids)
                 for input_nodes, output_nodes, blocks in test_dataloader:
-                    # blocks = [b.to(th.device(device)) for b in blocks]
-                    logits = net(blocks, features[input_nodes])
-                    batch_loss = F.binary_cross_entropy(logits, labels[output_nodes])
+                    blocks = [b.to(th.device(device)) for b in blocks]
+                    logits = net(blocks, features[input_nodes].to(device))
+                    batch_loss = F.binary_cross_entropy(logits, labels[output_nodes].to(device))
                     test_loss += batch_loss.detach().item()
                 test_loss /= test_steps
                 print(f"Epoch {epoch} | Loss {train_loss:.4f} | Test Loss {test_loss:.4f}")
@@ -190,13 +170,9 @@ class Net(nn.Module):
 
     def __init__(self, input_length, nb_classes):
         super().__init__()
-        self.gcn1 = GraphConv(input_length, 1000)
-        self.gcn2 = GraphConv(1000, nb_classes)
-        # self.fc1 = nn.Linear(input_length, nb_classes)
+        self.fc1 = nn.Linear(input_length, nb_classes)
 
     def forward(self, blocks, x):
-        x = self.gcn1(blocks[0], x)
-        x = self.gcn2(blocks[1], x)
         x = F.sigmoid(x)
         return x
 
