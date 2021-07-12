@@ -23,7 +23,7 @@ from relGraphConv import RelGraphConv
 
 import logging
 
-#logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
 
 from baseRGCN import BaseRGCN
 
@@ -69,7 +69,7 @@ class RGCN(BaseRGCN):
         act = F.relu if idx < self.num_hidden_layers - 1 else None
         return RelGraphConv(self.h_dim, self.h_dim, self.num_rels, "bdd",
                 self.num_bases, activation=act, self_loop=True,
-                dropout=self.dropout)
+                dropout=self.dropout, low_mem = True)
 
 class LinkPredict(nn.Module):
     def __init__(self, in_dim, h_dim, num_rels,num_bases=-1,
@@ -104,7 +104,7 @@ class LinkPredict(nn.Module):
         # triplets is a list of data samples (positive and negative)
         # each row in the triplets is a 3-tuple of (source, relation, destination)
         score = self.calc_score(embed, triplets)
-        logging.debug("score: " + str(score))
+        #logging.debug("score: " + str(score))
         predict_loss = F.binary_cross_entropy_with_logits(score, labels)
         reg_loss = self.regularization_loss(embed)
         return predict_loss + self.reg_param * reg_loss
@@ -155,7 +155,7 @@ def main(args):
                 range(test_graph.number_of_nodes())).float().view(-1,1)
     test_node_id = torch.arange(0, num_nodes, dtype=torch.long).view(-1, 1)
     test_rel = torch.from_numpy(test_rel)
-    test_edge_feat = torch.arange(0, num_rels, dtype=torch.long).view(-1, 1)
+    test_edge_feat = torch.arange(0, num_rels*2, dtype=torch.long).view(-1, 1)
       
     test_norm = node_norm_to_edge_norm(test_graph, torch.from_numpy(test_norm).view(-1, 1))
 
@@ -195,7 +195,7 @@ def main(args):
 
         # set node/edge feature
         node_id = torch.from_numpy(node_id).view(-1, 1).long()
-        edge_feat = torch.arange(num_rels).view(-1, 1).long()
+        edge_feat = torch.arange(num_rels*2).view(-1, 1).long()
         edge_type = torch.from_numpy(edge_type)
 
         logging.debug("Node id: " + str(node_id.shape))
@@ -280,7 +280,7 @@ if __name__ == '__main__':
             help="dropout probability")
     parser.add_argument("--attn-drop", type=float, default=0.2,
             help="attention dropout probability")
-    parser.add_argument("--n-hidden", type=int, default=500,
+    parser.add_argument("--n-hidden", type=int, default=504,
             help="number of hidden units")
     parser.add_argument("--gpu", type=int, default=0,
             help="gpu")
