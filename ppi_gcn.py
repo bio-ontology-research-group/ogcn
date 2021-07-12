@@ -11,11 +11,9 @@ from torch import optim
 from sklearn.metrics import roc_curve, auc, matthews_corrcoef
 import copy
 from torch.utils.data import DataLoader
-from sagpool import SAGNetworkHierarchical, SAGNetworkGlobal
+from sagpool import SAGNetworkHierarchical
+from dgl.nn import GraphConv, AvgPooling, MaxPooling
 import random
-
-import logging
-logging.basicConfig(level=logging.INFO)
 
 th.manual_seed(0)
 np.random.seed(0)
@@ -50,13 +48,11 @@ random.seed(0)
 def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, batch_size, epochs, load):
     device = 'cuda'
     g, annots, prot_idx = load_graph_data(data_file)
-    logging.info("Graph loaded")
     g = g.to(device)
     annots = th.FloatTensor(annots).to(device)
     train_df, test_df = load_ppi_data(train_inter_file, test_inter_file)
-    num_nodes = g.number_of_nodes()
-    model = SAGNetworkGlobal(2, 2, 1, num_convs = 2, num_nodes = num_nodes, pool_ratio = 0.5, dropout = 0.1) #PPIModel()
-    logging.info("Model created")
+    num_nodes = g.num_nodes()
+    model = PPIModel(num_nodes)
     model.to(device)
     loss_func = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
@@ -65,7 +61,7 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
 
     train_set_batches = get_batches(g, annots, prot_idx, train_df, train_labels, batch_size)
     test_set_batches = get_batches(g, annots, prot_idx, test_df, test_labels, batch_size)
-    logging.info("Train and test datasets created")
+
 
     for epoch in range(epochs):
         epoch_loss = 0
@@ -134,12 +130,15 @@ def collate(samples):
 
 class PPIModel(nn.Module):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, num_nodes):
         super().__init__()
+        self.num_nodes = num_nodes
         self.gcn1 = dglnn.GraphConv(2, 2)
         self.gcn2 = dglnn.GraphConv(2, 2)
         self.gcn3 = dglnn.GraphConv(2, 2)
-        self.fc = nn.Linear(286*2, 1)
+        self.avgpool = AvgPooling()
+        self.maxpool = MaxPooling()   
+        self.fc = nn.Linear(4, 1)
         
     def forward(self, g):
         features = g.ndata['feat']
@@ -148,7 +147,8 @@ class PPIModel(nn.Module):
         x = self.gcn2(g, x)
         x = F.relu(x)
 
-        x = th.flatten(x).view(-1, 286*2)
+        x = th.cat([self.avgpool(g, x), self.maxpool(g, x)], dim=-1)
+        #x = th.flatten(x).view(-1, self.num_nodes*2)
         return th.sigmoid(self.fc(x))
         
 def load_ppi_data(train_inter_file, test_inter_file):
@@ -167,6 +167,7 @@ def load_ppi_data(train_inter_file, test_inter_file):
 
 def load_graph_data(data_file):
     go = Ontology('data/goslim_yeast.obo')
+
     nodes = list(go.ont.keys())
     node_idx = {v: k for k, v in enumerate(nodes)}
     g = dgl.DGLGraph()
