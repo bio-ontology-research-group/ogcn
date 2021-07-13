@@ -1,11 +1,16 @@
 
-import jpype
-import jpype.imports
+
 import os
+import pickle as pkl
 import logging
+
 
 logging.basicConfig(level=logging.DEBUG)
 
+
+#JPype imports
+import jpype
+import jpype.imports
 jars_dir = "../jars/"
 jars = f'{str.join(":", [jars_dir + name for name in os.listdir(jars_dir)])}'
 
@@ -15,8 +20,6 @@ if not jpype.isJVMStarted():
         "-Djava.class.path=" + jars,
         convertStrings=False)
 
-
-#JPype imports
 from org.semanticweb.owlapi.apibinding import OWLManager
 from org.semanticweb.owlapi.model.parameters import Imports
 from java.io import File
@@ -58,6 +61,13 @@ def main():
     graph = dgl.heterograph(graph)
 
     dgl.save_graphs("../data/go_cat.bin", graph)
+
+
+    logging.debug(f"Type of node_idx: {type(node_idx)}")
+    node_idx = {str(v.toStringID()): k for k, v in enumerate(go_classes)}
+    
+    with open("../data/nodes_cat.pkl", "wb") as pkl_file:
+        pkl.dump(node_idx, pkl_file)
     # axioms = ontology.getAxioms(list(go_classes)[17])
     # print(axioms)
 

@@ -4,6 +4,7 @@ from ont import Ontology
 import dgl
 from dgl import nn as dglnn
 import torch as th
+import pickle as pkl
 import numpy as np
 from torch import nn
 from torch.nn import functional as F
@@ -222,20 +223,29 @@ def load_ppi_data(train_inter_file, test_inter_file):
     return train_df, test_df
 
 def load_graph_data(data_file, rels = [], with_disjoint = False, with_intersection = False, inverse = False):
-    go = Ontology('data/go.obo', rels, with_disjoint, with_intersection, inverse)
-    nodes = list(go.ont.keys())
-    node_idx = {v: k for k, v in enumerate(nodes)}
+    # go = Ontology('data/go.obo', rels, with_disjoint, with_intersection, inverse)
+    # nodes = list(go.ont.keys())
+    # node_idx = {v: k for k, v in enumerate(nodes)}
    
 
-    g = go.toDGLGraph()
-    g = dgl.add_self_loop(g, 'is_a')
+
+    # g = go.toDGLGraph()
+    
+    graphs, data_dict = dgl.load_graphs('data/go_cat.bin')
+    g = graphs[0]
+
+    num_nodes = g.number_of_nodes()
+    
+    with open("data/nodes_cat.pkl", "rb") as pkl_file:
+        node_idx = pkl.load(pkl_file)
+#    g = dgl.add_self_loop(g, 'id')
     
     df = pd.read_pickle(data_file)
     df = df[df['orgs'] == '559292']
   
 
 
-    annotations = np.zeros((len(nodes), len(df)), dtype=np.float32)
+    annotations = np.zeros((num_nodes, len(df)), dtype=np.float32)
 
     prot_idx = {}
     for i, row in enumerate(df.itertuples()):
