@@ -48,7 +48,7 @@ random.seed(0)
 def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, batch_size, epochs, load):
 
     device = 'cuda'
-
+    #
     rels = ['part_of', 'regulates'] #, 'has_part', 'occurs_in']
 
     g, annots, prot_idx = load_graph_data(data_file, rels = rels, with_disjoint = False, with_intersection = False, inverse = False)
