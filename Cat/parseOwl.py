@@ -54,6 +54,7 @@ def main():
             graph[key] = list()
 
         node1 = node_idx[go_class_1]
+        logging.debug(f"goClass2: {go_class_2}")
         node2 = node_idx[go_class_2]
 
         graph[key].append([node1, node2])
@@ -92,6 +93,11 @@ def processAxioms(go_class):
             for expr in expressions:
                 new_edges = processExpressions(go_class, expr)
             edges += new_edges
+        elif axiomType == "SubClassOf":
+            edges += processSubClassOfAxiom(axiom)
+
+        else:
+            logging.info(f"axiom type missing: {axiomType}")
 
     return edges
 
@@ -106,9 +112,31 @@ def processExpressions(go_class, expr):
             if opType == "Class":
                 edges.append((go_class, "projects", op))
             elif opType == "ObjectSomeValuesFrom":
-                
+                relation = op.getProperty().toStringID()
+                dst_class = op.getFiller()
+                dst_type = dst_class.getClassExpressionType().getName()
+                if dst_type == "Class":
+                    edges.append((go_class, f"projects_{relation}", dst_class))
+                else:
+                    logging.info("Detected complex operand in intersection")
+
             else:
                 logging.info(f"projection missing: {opType}")
+    return edges
+
+def processSubClassOfAxiom(axiom):
+    subClass = axiom.getSubClass()
+    superClass = axiom.getSuperClass()
+
+    subClassType = subClass.getClassExpressionType().getName()
+    superClassType = superClass.getClassExpressionType().getName()
+
+    if subClassType == "Class" and superClassType == "Class":
+        edges = [(subClass, "is_a", superClass)]
+    else:
+        edges = []
+        logging.info("Detected complex subclass or superclass in subClassOf")
+
     return edges
 
 if __name__ == '__main__':
