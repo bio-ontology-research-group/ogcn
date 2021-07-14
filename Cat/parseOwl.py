@@ -5,7 +5,7 @@ import pickle as pkl
 import logging
 
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 
 #JPype imports
@@ -105,6 +105,10 @@ def processExpressions(go_class, expr):
             opType = op.getClassExpressionType().getName()
             if opType == "Class":
                 edges.append((go_class, "projects", op))
+            elif opType == "ObjectSomeValuesFrom":
+                
+            else:
+                logging.info(f"projection missing: {opType}")
     return edges
 
 if __name__ == '__main__':
