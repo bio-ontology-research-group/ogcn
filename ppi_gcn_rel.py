@@ -69,7 +69,7 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
     model = PPIModel(feat_dim, num_rels, num_rels, num_nodes)
     model.to(device)
     loss_func = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.0001)
     train_labels = th.FloatTensor(train_df['labels'].values).to(device)
     test_labels = th.FloatTensor(test_df['labels'].values).to(device)
 
