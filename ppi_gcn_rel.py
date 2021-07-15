@@ -16,6 +16,10 @@ from dgl.nn.pytorch import RelGraphConv
 from baseRGCN import BaseRGCN
 from dgl.nn import GraphConv, AvgPooling, MaxPooling
 import random
+
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
 th.manual_seed(0)
 np.random.seed(0)
 random.seed(0)
@@ -238,7 +242,7 @@ def load_graph_data(data_file, rels = [], with_disjoint = False, with_intersecti
     
     with open("data/nodes_cat.pkl", "rb") as pkl_file:
         node_idx = pkl.load(pkl_file)
-#    g = dgl.add_self_loop(g, 'id')
+    g = dgl.add_self_loop(g, 'id')
     
     df = pd.read_pickle(data_file)
     df = df[df['orgs'] == '559292']

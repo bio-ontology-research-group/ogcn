@@ -5,7 +5,7 @@ import pickle as pkl
 import logging
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 
 #JPype imports
@@ -42,8 +42,11 @@ def main():
 
     edges = []
     for go_class in go_classes:
+        edges.append((go_class, "id", go_class))
         new_edges = processAxioms(go_class)
         edges += new_edges
+
+    logging.info(f"Number of edges: {len(edges)}")
 
     logging.debug(f"Number of edges: {len(edges)}")
     logging.debug(f"First edge: {edges[0]}")
@@ -54,18 +57,22 @@ def main():
             graph[key] = list()
 
         node1 = node_idx[go_class_1]
-        logging.debug(f"goClass2: {go_class_2}")
         node2 = node_idx[go_class_2]
 
         graph[key].append([node1, node2])
     
+    rels = {k: len(v) for k, v in graph.items()}
+
+    logging.info(f"Number of nodes: {len(go_classes)}")
+    logging.info(f"Edges in the graph:\n{rels}")
+
     graph = dgl.heterograph(graph)
 
     dgl.save_graphs("../data/go_cat.bin", graph)
 
 
     logging.debug(f"Type of node_idx: {type(node_idx)}")
-    node_idx = {str(v.toStringID()): k for k, v in enumerate(go_classes)}
+    node_idx = {prettyFormat(v): k for k, v in enumerate(go_classes)}
     
     with open("../data/nodes_cat.pkl", "wb") as pkl_file:
         pkl.dump(node_idx, pkl_file)
@@ -79,6 +86,10 @@ def main():
     # print(len(classes))
     # print(len(individuals))
 
+def prettyFormat(go_class):
+    go_class_str = str(go_class.toStringID()).split('/')[-1]
+    go_class_str = go_class_str.replace("_", ":",1)
+    return go_class_str
 
 def processAxioms(go_class):
     axioms = ontology.getAxioms(go_class)
@@ -93,7 +104,7 @@ def processAxioms(go_class):
             for expr in expressions:
                 new_edges = processExpressions(go_class, expr)
             edges += new_edges
-        elif axiomType == "SubClassOf":
+        elif False and axiomType == "SubClassOf":
             edges += processSubClassOfAxiom(axiom)
 
         else:
@@ -112,8 +123,7 @@ def processExpressions(go_class, expr):
             if opType == "Class":
                 edges.append((go_class, "projects", op))
             elif opType == "ObjectSomeValuesFrom":
-                relation = op.getProperty().toStringID()
-                dst_class = op.getFiller()
+                relation, dst_class = processObjectSomeValuesFrom(op)
                 dst_type = dst_class.getClassExpressionType().getName()
                 if dst_type == "Class":
                     edges.append((go_class, f"projects_{relation}", dst_class))
@@ -131,13 +141,26 @@ def processSubClassOfAxiom(axiom):
     subClassType = subClass.getClassExpressionType().getName()
     superClassType = superClass.getClassExpressionType().getName()
 
+    edges = []
     if subClassType == "Class" and superClassType == "Class":
         edges = [(subClass, "is_a", superClass)]
+    elif False and subClassType == "Class" and superClassType == "ObjectSomeValuesFrom":
+        relation, dst_class = processObjectSomeValuesFrom(superClass)
+        dst_type = dst_class.getClassExpressionType().getName()
+        if dst_type == "Class":
+            edges.append((subClass, f"{relation}", dst_class))
+        else:
+            logging.info("Detected complex operand in SubClassOf axiom")
     else:
         edges = []
-        logging.info("Detected complex subclass or superclass in subClassOf")
+        logging.info(f"Detected complex subclass or superclass in subClassOf: {subClassType}, {superClassType}")
 
     return edges
+
+def processObjectSomeValuesFrom(expr):
+    relation = expr.getProperty().toStringID()
+    dst_class = expr.getFiller()
+    return relation, dst_class
 
 if __name__ == '__main__':
     main()
