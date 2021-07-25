@@ -16,6 +16,8 @@ from RelAtt.baseRGCN import BaseRGCN
 from dgl.nn import GraphConv, AvgPooling, MaxPooling
 import random
 
+from ppi_gcn_rel import GraphDataset
+
 th.manual_seed(0)
 np.random.seed(0)
 random.seed(0)
@@ -48,11 +50,6 @@ random.seed(0)
 def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, batch_size, epochs, load):
     device = 'cuda'
 
-    with_ic = False
-    if with_ic:
-        feat_dim = 3
-    else:
-        feat_dim = 2
 
     with_disjoint = False
     with_intersection = False
@@ -60,59 +57,62 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
 
     rels = ['part_of', 'regulates']
 
-    g, annots, prot_idx = load_graph_data(data_file, rels = rels, with_ic = with_ic, with_disjoint = with_disjoint, with_intersection = with_intersection, inverse = inverse)
+    g, annots, prot_idx = load_graph_data(data_file, rels = rels, with_disjoint = with_disjoint, with_intersection = with_intersection, inverse = inverse)
     
     num_rels = len(g.canonical_etypes)
-
+    feat_dim = 2
  
     g = dgl.to_homogeneous(g)
 
     #print("HOMOGENOUS GRAPH: " + str(g.number_of_edges()))
     
     num_nodes = g.number_of_nodes()
-    print(f"Num nodes: {num_nodes}")
-    annots = th.FloatTensor(annots)
+    print(f"Num nodes: {g.number_of_nodes()}")
+    annots = th.FloatTensor(annots).to(device)
     train_df, test_df = load_ppi_data(train_inter_file, test_inter_file)
     model = PPIModel(feat_dim, num_rels, num_rels, num_nodes)
     model.to(device)
     loss_func = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.0001)
     train_labels = th.FloatTensor(train_df['labels'].values).to(device)
     test_labels = th.FloatTensor(test_df['labels'].values).to(device)
 
-    train_set_batches = get_batches(g, annots, prot_idx, train_df, train_labels, batch_size, with_ic = with_ic)
-    test_set_batches = get_batches(g, annots, prot_idx, test_df, test_labels, batch_size, with_ic = with_ic)
+    train_data = GraphDataset(g, train_df, train_labels, annots, prot_idx)
+    test_data = GraphDataset(g, test_df, test_labels, annots, prot_idx)
 
+    train_set_batches = get_batches(train_data, batch_size)
+    test_set_batches = get_batches(test_data, batch_size)
 
     for epoch in range(epochs):
         epoch_loss = 0
         model.train()
 
-        for iter, (batch, labels) in enumerate(train_set_batches):
-            logits = model(batch.to(device))
+        with ck.progressbar(train_set_batches) as bar:
+            for iter, (batch_g, batch_feat, batch_labels) in enumerate(bar):
+                logits = model(batch_g.to(device), batch_feat)
 
-            labels = labels.unsqueeze(1).to(device)
-            loss = loss_func(logits, labels)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            epoch_loss += loss.detach().item()
+                labels = batch_labels.unsqueeze(1).to(device)
+                loss = loss_func(logits, labels)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                epoch_loss += loss.detach().item()
 
-        epoch_loss /= (iter+1)
+            epoch_loss /= (iter+1)
 
         
         model.eval()
         test_loss = 0
         preds = []
         with th.no_grad():
-
-            for iter, (batch, labels) in enumerate(test_set_batches):
-                logits = model(batch.to(device))
-                labels = labels.unsqueeze(1).to(device)
-                loss = loss_func(logits, labels)
-                test_loss += loss.detach().item()
-                preds = np.append(preds, logits.cpu())
-            test_loss /= (iter+1)
+            with ck.progressbar(test_set_batches) as bar:
+                for iter, (batch_g, batch_feat, batch_labels) in enumerate(bar):
+                    logits = model(batch_g.to(device), batch_feat)
+                    labels = batch_labels.unsqueeze(1).to(device)
+                    loss = loss_func(logits, labels)
+                    test_loss += loss.detach().item()
+                    preds = np.append(preds, logits.cpu())
+                test_loss /= (iter+1)
 
         labels = test_df['labels'].values
         roc_auc = compute_roc(labels, preds)
@@ -125,32 +125,15 @@ def compute_roc(labels, preds):
 
     return roc_auc
 
-def get_batches(graph, annots, prot_idx, df, labels, batch_size, with_ic = False):
-    dataset = []
-    with ck.progressbar(df.itertuples(), length=len(df)) as bar:
-        for row in bar:
-            i = bar.pos
-            p1, p2 = row.interactions
-            label = labels[i].view(1, 1)
-            if p1 not in prot_idx or p2 not in prot_idx:
-                continue
-            pi1, pi2 = prot_idx[p1], prot_idx[p2]
-            if with_ic:
-                feat = annots[:, [0, pi1+1, pi2+1]]
-            else:
-                feat = annots[:, [pi1, pi2]]
-            graph_cp = copy.deepcopy(graph)
-            graph_cp.ndata['feat'] = feat
-            dataset.append((graph_cp, label))
-
+def get_batches(dataset, batch_size):
     return DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate)
     
 def collate(samples):
     # The input `samples` is a list of pairs
     #  (graph, label).
-    graphs, labels = map(list, zip(*samples))
+    graphs, features, labels = map(list, zip(*samples))
     batched_graph = dgl.batch(graphs)
-    return batched_graph, th.tensor(labels)
+    return batched_graph, th.cat(features, dim=0), th.tensor(labels)
 
 class EmbeddingLayer(nn.Module):
     def __init__(self, num_nodes, num_rels, h_dim):
@@ -194,8 +177,8 @@ class PPIModel(nn.Module):
                         self.h_dim, 
                         self.num_rels, 
                         self.num_bases,
-                        num_hidden_layers=2, 
-                        dropout=0.3,
+                        num_hidden_layers=1, 
+                        dropout=0.8,
                         use_self_loop=False, 
                         use_cuda=True
                         )
@@ -206,9 +189,9 @@ class PPIModel(nn.Module):
 
         self.fc = nn.Linear(self.num_nodes*self.h_dim, 1)
         
-    def forward(self, g):
-        features = g.ndata['feat']
+    def forward(self, g, features):
         edge_type = g.edata[dgl.ETYPE].long()
+
         edge_feat = th.arange(self.num_rels).view(-1, 1).long().cuda()
 
         x, _ = self.rgcn(g, features, edge_type, edge_feat, None)
@@ -232,26 +215,28 @@ def load_ppi_data(train_inter_file, test_inter_file):
     test_df = test_df.iloc[index[:1000]]
     return train_df, test_df
 
-def load_graph_data(data_file, rels = [], with_ic = False, with_disjoint = False, with_intersection = False, inverse = True):
-    go = Ontology('data/go.obo', rels, with_disjoint, with_intersection, inverse)
-    nodes = list(go.ont.keys())
-    node_idx = {v: k for k, v in enumerate(nodes)}
+def load_graph_data(data_file, rels = [], with_disjoint = False, with_intersection = False, inverse = True):
+    # go = Ontology('data/go.obo', rels, with_disjoint, with_intersection, inverse)
+    # nodes = list(go.ont.keys())
+    # node_idx = {v: k for k, v in enumerate(nodes)}
    
 
-    g = go.toDGLGraph()
-    g = dgl.add_self_loop(g, 'is_a')
+    # g = go.toDGLGraph()
+    
+    graphs, data_dict = dgl.load_graphs('data/go_cat.bin')
+    g = graphs[0]
+
+    num_nodes = g.number_of_nodes()
+    
+    with open("data/nodes_cat.pkl", "rb") as pkl_file:
+        node_idx = pkl.load(pkl_file)
+    g = dgl.add_self_loop(g, 'id')
     
     df = pd.read_pickle(data_file)
     df = df[df['orgs'] == '559292']
     
-    if with_ic:
-        go.calculate_ic(df['prop_annotations'])
-        annotations = np.zeros((len(nodes), len(df) + 1), dtype=np.float32)
-        for i, go_id in enumerate(go.ont.keys()):
-            annotations[i, 0] = go.get_ic(go_id)
-
-    else:
-        annotations = np.zeros((len(nodes), len(df)), dtype=np.float32)
+    
+    annotations = np.zeros((num_nodes, len(df)), dtype=np.float32)
 
     prot_idx = {}
     for i, row in enumerate(df.itertuples()):
@@ -259,10 +244,7 @@ def load_graph_data(data_file, rels = [], with_ic = False, with_disjoint = False
         prot_idx[prot_id] = i
         for go_id in row.prop_annotations:
             if go_id in node_idx:
-                if with_ic:
-                    annotations[node_idx[go_id], i + 1] = 1
-                else:
-                    annotations[node_idx[go_id], i] = 1
+                annotations[node_idx[go_id], i] = 1
     return g, annotations, prot_idx
     
 if __name__ == '__main__':

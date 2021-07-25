@@ -73,13 +73,11 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
     train_labels = th.FloatTensor(train_df['labels'].values).to(device)
     test_labels = th.FloatTensor(test_df['labels'].values).to(device)
 
-
     train_data = GraphDataset(g, train_df, train_labels, annots, prot_idx)
     test_data = GraphDataset(g, test_df, test_labels, annots, prot_idx)
 
     train_set_batches = get_batches(train_data, batch_size)
     test_set_batches = get_batches(test_data, batch_size)
-
 
     for epoch in range(epochs):
         epoch_loss = 0
@@ -232,7 +230,6 @@ def load_graph_data(data_file, rels = [], with_disjoint = False, with_intersecti
     # node_idx = {v: k for k, v in enumerate(nodes)}
    
 
-
     # g = go.toDGLGraph()
     
     graphs, data_dict = dgl.load_graphs('data/go_cat.bin')
@@ -247,7 +244,6 @@ def load_graph_data(data_file, rels = [], with_disjoint = False, with_intersecti
     df = pd.read_pickle(data_file)
     df = df[df['orgs'] == '559292']
   
-
 
     annotations = np.zeros((num_nodes, len(df)), dtype=np.float32)
 
