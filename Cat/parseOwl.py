@@ -27,12 +27,15 @@ from java.io import File
 #DGL imports
 import dgl
 
+
 def main():
     ont_manager = OWLManager.createOWLOntologyManager()
+
+    global data_factory
     data_factory = ont_manager.getOWLDataFactory()
 
     global ontology 
-    ontology = ont_manager.loadOntologyFromOntologyDocument(File("../data/go.owl"))
+    ontology = ont_manager.loadOntologyFromOntologyDocument(File("../data/go-plus.owl"))
     
     axioms = ontology.getAxioms()
 
@@ -40,6 +43,8 @@ def main():
     go_classes = ontology.getClassesInSignature(imports)
     node_idx = {v: k for k, v in enumerate(go_classes)}
 
+    global rel_counter
+    rel_counter = 0
     edges = []
     for go_class in go_classes:
         edges.append((go_class, "id", go_class))
@@ -61,6 +66,8 @@ def main():
 
         graph[key].append([node1, node2])
     
+    graph = {k: v for k, v in graph.items() if len(v) > 1000}
+
     rels = {k: len(v) for k, v in graph.items()}
 
     logging.info(f"Number of nodes: {len(go_classes)}")
@@ -76,6 +83,7 @@ def main():
     
     with open("../data/nodes_cat.pkl", "wb") as pkl_file:
         pkl.dump(node_idx, pkl_file)
+
     # axioms = ontology.getAxioms(list(go_classes)[17])
     # print(axioms)
 
@@ -104,9 +112,10 @@ def processAxioms(go_class):
             for expr in expressions:
                 new_edges = processExpressions(go_class, expr)
             edges += new_edges
-        elif False and axiomType == "SubClassOf":
+        elif axiomType == "SubClassOf":
             edges += processSubClassOfAxiom(axiom)
-
+        elif axiomType == "DisjointClasses":
+            edges += processDisjointness(axiom)
         else:
             logging.info(f"axiom type missing: {axiomType}")
 
@@ -126,7 +135,7 @@ def processExpressions(go_class, expr):
                 relation, dst_class = processObjectSomeValuesFrom(op)
                 dst_type = dst_class.getClassExpressionType().getName()
                 if dst_type == "Class":
-                    edges.append((go_class, f"projects_{relation}", dst_class))
+                    edges.append((go_class, "projects_" + relation, dst_class))
                 else:
                     logging.info("Detected complex operand in intersection")
 
@@ -144,7 +153,7 @@ def processSubClassOfAxiom(axiom):
     edges = []
     if subClassType == "Class" and superClassType == "Class":
         edges = [(subClass, "is_a", superClass)]
-    elif False and subClassType == "Class" and superClassType == "ObjectSomeValuesFrom":
+    elif subClassType == "Class" and superClassType == "ObjectSomeValuesFrom":
         relation, dst_class = processObjectSomeValuesFrom(superClass)
         dst_type = dst_class.getClassExpressionType().getName()
         if dst_type == "Class":
@@ -157,10 +166,44 @@ def processSubClassOfAxiom(axiom):
 
     return edges
 
+def processDisjointness(axiom):
+    exprs = axiom.getClassExpressionsAsList()
+
+    edges = []
+
+    if len(exprs) > 2:
+        logging.info("More than two operands in Disjoint axiom")
+    else:
+        src = exprs[0]
+        dst = exprs[1]
+
+        srcType = src.getClassExpressionType().getName()
+        dstType = dst.getClassExpressionType().getName()
+        if srcType == "Class" and dstType == "Class":
+            edges.append((src, "disjointWith", dst))
+            edges.append((dst, "disjointWith", src))
+        else:
+            logging.info(f"Detected complex nodes in disjointWith: {srcType}, {dstType}")
+
+    return edges
+
 def processObjectSomeValuesFrom(expr):
-    relation = expr.getProperty().toStringID()
+    global rel_counter
+    relation = expr.getProperty() #.toStringID()
+
+    rel = None
+    #to get name of relation
+    for annot in ontology.getAnnotationAssertionAxioms(relation.getIRI()):
+        if annot.getProperty() == data_factory.getRDFSLabel() :
+            rel = str(annot.getValue()).strip('"').replace(' ', '_')
+        
+    if rel == None:
+        logging.debug(f"relation: {rel_counter}")
+
+        rel = "rel_" + str(rel_counter)
+        rel_counter += 1
     dst_class = expr.getFiller()
-    return relation, dst_class
+    return rel, dst_class
 
 if __name__ == '__main__':
     main()

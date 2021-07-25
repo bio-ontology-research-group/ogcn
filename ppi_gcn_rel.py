@@ -20,9 +20,9 @@ import random
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
-th.manual_seed(0)
-np.random.seed(0)
-random.seed(0)
+#th.manual_seed(0)
+#np.random.seed(0)
+#random.seed(0)
 
 
 @ck.command()
@@ -69,7 +69,7 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
     model = PPIModel(feat_dim, num_rels, num_rels, num_nodes)
     model.to(device)
     loss_func = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.0001)
     train_labels = th.FloatTensor(train_df['labels'].values).to(device)
     test_labels = th.FloatTensor(test_df['labels'].values).to(device)
 
@@ -160,8 +160,8 @@ class PPIModel(nn.Module):
                         self.h_dim, 
                         self.num_rels, 
                         self.num_bases,
-                        num_hidden_layers=2, 
-                        dropout=0.1,
+                        num_hidden_layers=1, 
+                        dropout=0.8,
                         use_self_loop=False, 
                         use_cuda=True
                         )
