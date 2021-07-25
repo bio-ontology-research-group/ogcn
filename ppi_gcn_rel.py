@@ -17,8 +17,9 @@ from baseRGCN import BaseRGCN
 from dgl.nn import GraphConv, AvgPooling, MaxPooling
 import random
 
+
 import logging
-logging.basicConfig(level=logging.DEBUG)
+#logging.basicConfig(level=logging.DEBUG)
 
 #th.manual_seed(0)
 #np.random.seed(0)

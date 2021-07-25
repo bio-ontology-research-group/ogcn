@@ -4,6 +4,7 @@ from ont import Ontology
 import dgl
 from dgl import nn as dglnn
 import torch as th
+import pickle as pkl
 import numpy as np
 from torch import nn
 from torch.nn import functional as F
@@ -11,10 +12,11 @@ from torch import optim
 from sklearn.metrics import roc_curve, auc, matthews_corrcoef
 import copy
 from torch.utils.data import DataLoader
-from RelAtt.relGraphConv import RelGraphConv
-from RelAtt.baseRGCN import BaseRGCN
 from dgl.nn import GraphConv, AvgPooling, MaxPooling
 import random
+
+from RelAtt.relGraphConv import RelGraphConv
+from RelAtt.baseRGCN import BaseRGCN
 
 from ppi_gcn_rel import GraphDataset
 
