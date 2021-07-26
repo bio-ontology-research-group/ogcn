@@ -75,24 +75,16 @@ def main():
 
     graph = dgl.heterograph(graph)
 
-    dgl.save_graphs("../data/go_cat.bin", graph)
+    dgl.save_graphs("../data/go_cat2.bin", graph)
 
 
     logging.debug(f"Type of node_idx: {type(node_idx)}")
     node_idx = {prettyFormat(v): k for k, v in enumerate(go_classes)}
     
-    with open("../data/nodes_cat.pkl", "wb") as pkl_file:
+    with open("../data/nodes_cat2.pkl", "wb") as pkl_file:
         pkl.dump(node_idx, pkl_file)
 
-    # axioms = ontology.getAxioms(list(go_classes)[17])
-    # print(axioms)
 
-    # print("\n\n\n")
-    # print(list(axioms)[2].getClassExpressionsAsList())
-    # print(type(list(axioms)[2].getClassExpressionsAsList()[0].toStringID()))
-    # print(len(axioms))
-    # print(len(classes))
-    # print(len(individuals))
 
 def prettyFormat(go_class):
     go_class_str = str(go_class.toStringID()).split('/')[-1]
@@ -110,19 +102,21 @@ def processAxioms(go_class):
             expressions.pop(0) # Remove the first element, which is the go class
 
             for expr in expressions:
-                new_edges = processExpressions(go_class, expr)
+                new_edges = processEquivRightSide(go_class, expr)
             edges += new_edges
-        elif axiomType == "SubClassOf":
+        elif False and axiomType == "SubClassOf":
             edges += processSubClassOfAxiom(axiom)
-        elif axiomType == "DisjointClasses":
+        elif False and axiomType == "DisjointClasses":
             edges += processDisjointness(axiom)
         else:
-            logging.info(f"axiom type missing: {axiomType}")
+            notConsidered = ["SubClassOf", "DisjointClasses"]
+            if not axiomType in notConsidered:
+                logging.info(f"axiom type missing: {axiomType}")
 
     return edges
 
 
-def processExpressions(go_class, expr):
+def processEquivRightSide(go_class, expr):
     exprType = expr.getClassExpressionType().getName()
     edges = []
     if exprType == "ObjectIntersectionOf":
@@ -137,10 +131,12 @@ def processExpressions(go_class, expr):
                 if dst_type == "Class":
                     edges.append((go_class, "projects_" + relation, dst_class))
                 else:
-                    logging.info("Detected complex operand in intersection")
+                    logging.info(f"Detected complex operand in intersection {dst_type}")
 
             else:
                 logging.info(f"projection missing: {opType}")
+    else:
+        logging.info(f"Right side of equivalence axiom missing: {exprType}")
     return edges
 
 def processSubClassOfAxiom(axiom):

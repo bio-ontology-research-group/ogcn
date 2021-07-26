@@ -45,7 +45,7 @@ random.seed(0)
     '--batch-size', '-bs', default=32,
     help='Batch size for training')
 @ck.option(
-    '--epochs', '-ep', default=32,
+    '--epochs', '-ep', default=64,
     help='Training epochs')
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
@@ -62,6 +62,7 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
     g, annots, prot_idx = load_graph_data(data_file, rels = rels, with_disjoint = with_disjoint, with_intersection = with_intersection, inverse = inverse)
     
     num_rels = len(g.canonical_etypes)
+    num_bases = 20
     feat_dim = 2
  
     g = dgl.to_homogeneous(g)
@@ -72,10 +73,10 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
     print(f"Num nodes: {g.number_of_nodes()}")
     annots = th.FloatTensor(annots).to(device)
     train_df, test_df = load_ppi_data(train_inter_file, test_inter_file)
-    model = PPIModel(feat_dim, num_rels, num_rels, num_nodes)
+    model = PPIModel(feat_dim, num_rels, num_bases, num_nodes)
     model.to(device)
     loss_func = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    optimizer = optim.Adam(model.parameters(), lr=0.0005)
     train_labels = th.FloatTensor(train_df['labels'].values).to(device)
     test_labels = th.FloatTensor(test_df['labels'].values).to(device)
 
