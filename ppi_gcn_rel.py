@@ -46,17 +46,34 @@ import logging
     '--batch-size', '-bs', default=32,
     help='Batch size for training')
 @ck.option(
-    '--epochs', '-ep', default=64,
+    '--epochs', '-ep', default=32,
     help='Training epochs')
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
 def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, batch_size, epochs, load):
 
+    global g, device, num_bases, num_nodes, num_rels, feat_dim, annots, prot_idx, loss_func
     device = 'cuda'
    
+    g, annots, prot_idx = load_graph_data(data_file)
     
+    num_nodes = g.number_of_nodes()
+    print(f"Num nodes: {g.number_of_nodes()}")
+    
+    annots = th.FloatTensor(annots).to(device)
+    num_rels = len(g.canonical_etypes)
+
+    g = dgl.to_homogeneous(g)
+
+    num_bases = 20
+    feat_dim = 2
+    loss_func = nn.BCELoss()
+
+    
+    
+
     train(batch_size, epochs, data_file, train_inter_file, test_inter_file)
-    test()
+    test(batch_size, data_file, train_inter_file, test_inter_file)
     
 
 def load_data(train_inter_file, test_inter_file):
@@ -69,24 +86,14 @@ def load_data(train_inter_file, test_inter_file):
 
     return train_df, val_df, test_df
 
-def train(batch_size, epochs, data_file, train_inter_file, test_inter_file,  device = 'cuda'):
+def train(batch_size, epochs, data_file, train_inter_file, test_inter_file):
 
-    g, annots, prot_idx = load_graph_data(data_file)
-    g = dgl.to_homogeneous(g)
-
-    num_nodes = g.number_of_nodes()
-    print(f"Num nodes: {g.number_of_nodes()}")
-    
-    annots = th.FloatTensor(annots).to(device)
-    num_rels = len(g.canonical_etypes)
-    num_bases = 20
-    feat_dim = 2
+ 
 
     train_df, val_df, _ = load_data(train_inter_file, test_inter_file)
 
     model = PPIModel(feat_dim, num_rels, num_bases, num_nodes)
     model.to(device)
-    loss_func = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     train_labels = th.FloatTensor(train_df['labels'].values).to(device)
     val_labels = th.FloatTensor(val_df['labels'].values).to(device)
@@ -97,6 +104,7 @@ def train(batch_size, epochs, data_file, train_inter_file, test_inter_file,  dev
     train_set_batches = get_batches(train_data, batch_size)
     val_set_batches = get_batches(val_data, batch_size)
     
+    best_roc_auc = 0
     for epoch in range(epochs):
         epoch_loss = 0
         model.train()
@@ -118,18 +126,24 @@ def train(batch_size, epochs, data_file, train_inter_file, test_inter_file,  dev
         model.eval()
         val_loss = 0
         preds = []
+        labels = []
         with th.no_grad():
+            optimizer.zero_grad()
             with ck.progressbar(val_set_batches) as bar:
                 for iter, (batch_g, batch_feat, batch_labels) in enumerate(bar):
+                    
                     logits = model(batch_g.to(device), batch_feat)
-                    labels = batch_labels.unsqueeze(1).to(device)
-                    loss = loss_func(logits, labels)
+                    lbls = batch_labels.unsqueeze(1).to(device)
+                    loss = loss_func(logits, lbls)
                     val_loss += loss.detach().item()
+                    labels = np.append(labels, lbls.cpu())
                     preds = np.append(preds, logits.cpu())
                 val_loss /= (iter+1)
 
-        labels = val_df['labels'].values
         roc_auc = compute_roc(labels, preds)
+        if roc_auc > best_roc_auc:
+            best_roc_auc = roc_auc
+            th.save(model.state_dict(), 'data/model_rel.pt')
         print(f'Epoch {epoch}: Loss - {epoch_loss}, \tVal loss - {val_loss}, \tAUC - {roc_auc}')
 
         # with tune.checkpoint_dir(epoch) as checkpoint_dir:
@@ -140,21 +154,35 @@ def train(batch_size, epochs, data_file, train_inter_file, test_inter_file,  dev
     print("Finished Training")
 
 
-def test():
+def test(batch_size, data_file, train_inter_file, test_inter_file):
+
+    _, _, test_df = load_data(train_inter_file, test_inter_file)
+    test_labels = th.FloatTensor(test_df['labels'].values).to(device)
+    
+    test_data = GraphDataset(g, test_df, test_labels, annots, prot_idx)
+    
+    test_set_batches = get_batches(test_data, batch_size)
+
+    model = PPIModel(feat_dim, num_rels, num_bases, num_nodes)
+    model.load_state_dict(th.load('data/model_rel.pt'))
+    model.to(device)
+    model.eval()
     test_loss = 0
+
+    preds = []
     with th.no_grad():
         with ck.progressbar(test_set_batches) as bar:
             for iter, (batch_g, batch_feat, batch_labels) in enumerate(bar):
                 logits = model(batch_g.to(device), batch_feat)
                 labels = batch_labels.unsqueeze(1).to(device)
                 loss = loss_func(logits, labels)
-                val_loss += loss.detach().item()
+                test_loss += loss.detach().item()
                 preds = np.append(preds, logits.cpu())
             test_loss /= (iter+1)
 
     labels = test_df['labels'].values
     roc_auc = compute_roc(labels, preds)
-    print(f'Epoch {epoch}: Loss - {epoch_loss}, \tTest loss - {test_loss}, \tAUC - {roc_auc}')
+    print(f'Test loss - {test_loss}, \tAUC - {roc_auc}')
 
     return roc_auc
 

@@ -35,7 +35,7 @@ def main():
     data_factory = ont_manager.getOWLDataFactory()
 
     global ontology 
-    ontology = ont_manager.loadOntologyFromOntologyDocument(File("../data/go-plus.owl"))
+    ontology = ont_manager.loadOntologyFromOntologyDocument(File("../data/go.owl"))
     
     axioms = ontology.getAxioms()
 
@@ -74,13 +74,13 @@ def main():
 
     graph = dgl.heterograph(graph)
 
-    dgl.save_graphs("../data/go_cat2.bin", graph)
+    dgl.save_graphs("../data/go_cat.bin", graph)
 
 
     logging.debug(f"Type of node_idx: {type(node_idx)}")
     node_idx = {prettyFormat(v): k for k, v in enumerate(go_classes)}
     
-    with open("../data/nodes_cat2.pkl", "wb") as pkl_file:
+    with open("../data/nodes_cat.pkl", "wb") as pkl_file:
         pkl.dump(node_idx, pkl_file)
 
 
