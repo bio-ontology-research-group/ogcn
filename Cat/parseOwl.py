@@ -53,7 +53,6 @@ def main():
 
     logging.info(f"Number of edges: {len(edges)}")
 
-    logging.debug(f"Number of edges: {len(edges)}")
     logging.debug(f"First edge: {edges[0]}")
     graph = {}
     for go_class_1, rel, go_class_2 in edges:
@@ -66,8 +65,8 @@ def main():
 
         graph[key].append([node1, node2])
     
-    graph = {k: v for k, v in graph.items() if len(v) > 1000}
-
+    graph = {k: v for k, v in graph.items() if len(v) > 100}
+   
     rels = {k: len(v) for k, v in graph.items()}
 
     logging.info(f"Number of nodes: {len(go_classes)}")
@@ -94,6 +93,7 @@ def prettyFormat(go_class):
 def processAxioms(go_class):
     axioms = ontology.getAxioms(go_class)
     edges = []
+
     for axiom in axioms:
         axiomType = axiom.getAxiomType().getName()
 
@@ -103,7 +103,7 @@ def processAxioms(go_class):
 
             for expr in expressions:
                 new_edges = processEquivRightSide(go_class, expr)
-            edges += new_edges
+                edges += new_edges
         elif False and axiomType == "SubClassOf":
             edges += processSubClassOfAxiom(axiom)
         elif False and axiomType == "DisjointClasses":
@@ -113,12 +113,14 @@ def processAxioms(go_class):
             if not axiomType in notConsidered:
                 logging.info(f"axiom type missing: {axiomType}")
 
+
     return edges
 
 
 def processEquivRightSide(go_class, expr):
     exprType = expr.getClassExpressionType().getName()
     edges = []
+
     if exprType == "ObjectIntersectionOf":
         operands = expr.getOperands()
         for op in operands:
@@ -130,13 +132,42 @@ def processEquivRightSide(go_class, expr):
                 dst_type = dst_class.getClassExpressionType().getName()
                 if dst_type == "Class":
                     edges.append((go_class, "projects_" + relation, dst_class))
+                elif dst_type == "ObjectSomeValuesFrom":
+                    relation2, dst_class2 = processObjectSomeValuesFrom(dst_class)
+                    dst_type2 = dst_class2.getClassExpressionType().getName()
+                    if dst_type2 == "Class":
+                        edges.append((go_class, "projects_" + relation + "_" + relation2, dst_class2))
+                    else:
+                        logging.info(f"Detected complex operand in intersection2 {dst_type} \t {go_class}")
                 else:
-                    logging.info(f"Detected complex operand in intersection {dst_type}")
+                    notConsidered = ["ObjectIntersectionOf"]
+                    if not dst_type in notConsidered:
+                        logging.info(f"Detected complex operand in intersection {dst_type} \t {go_class}")
 
             else:
-                logging.info(f"projection missing: {opType}")
+                notConsidered = ["ObjectIntersectionOf", "ObjectMinCardinality", "ObjectComplementOf"]
+                if not opType in notConsidered:
+                    logging.info(f"projection missing: {opType} \t {go_class}")
+    elif exprType == "ObjectUnionOf":
+        operands = expr.getOperands()
+        for op in operands:
+            opType = op.getClassExpressionType().getName()
+            if opType == "Class":
+                edges.append((op, "injects", go_class))
+            elif False and opType == "ObjectSomeValuesFrom":
+                relation, dst_class = processObjectSomeValuesFrom(op)
+                dst_type = dst_class.getClassExpressionType().getName()
+                if dst_type == "Class":
+                    edges.append((go_class, "projects_" + relation, dst_class))
+                else:
+                    logging.info(f"Detected complex operand in union {dst_type}")
+
+            else:
+                logging.info(f"injection missing: {opType}")
     else:
-        logging.info(f"Right side of equivalence axiom missing: {exprType}")
+        notConsidered = ["Class"]
+        if not exprType in notConsidered:
+            logging.info(f"Right side of equivalence axiom missing: {exprType}")
     return edges
 
 def processSubClassOfAxiom(axiom):
@@ -194,7 +225,6 @@ def processObjectSomeValuesFrom(expr):
             rel = str(annot.getValue()).strip('"').replace(' ', '_')
         
     if rel == None:
-        logging.debug(f"relation: {rel_counter}")
 
         rel = "rel_" + str(rel_counter)
         rel_counter += 1

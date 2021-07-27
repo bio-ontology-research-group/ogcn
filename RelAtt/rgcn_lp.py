@@ -251,7 +251,7 @@ if __name__ == '__main__':
             help="number of propagation rounds")
     parser.add_argument("--n-epochs", type=int, default=6000,
             help="number of minimum training epochs")
-    parser.add_argument("-d", "--dataset", type=str, default='wn18',
+    parser.add_argument("-d", "--dataset", type=str, default='FB15k-237',
             help="dataset to use")
     parser.add_argument("--eval-batch-size", type=int, default=500,
             help="batch size when evaluating")

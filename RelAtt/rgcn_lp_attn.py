@@ -280,7 +280,7 @@ if __name__ == '__main__':
             help="dropout probability")
     parser.add_argument("--attn-drop", type=float, default=0.2,
             help="attention dropout probability")
-    parser.add_argument("--n-hidden", type=int, default=504,
+    parser.add_argument("--n-hidden", type=int, default=500,
             help="number of hidden units")
     parser.add_argument("--gpu", type=int, default=0,
             help="gpu")
@@ -292,7 +292,7 @@ if __name__ == '__main__':
             help="number of propagation rounds")
     parser.add_argument("--n-epochs", type=int, default=6000,
             help="number of minimum training epochs")
-    parser.add_argument("-d", "--dataset", type=str, default='wn18', #FB15k-237
+    parser.add_argument("-d", "--dataset", type=str, default='FB15k-237', #FB15k-237
             help="dataset to use")
     parser.add_argument("--eval-batch-size", type=int, default=500,
             help="batch size when evaluating")

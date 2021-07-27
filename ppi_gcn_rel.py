@@ -67,18 +67,31 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
     num_nodes = g.number_of_nodes()
     print(f"Num nodes: {g.number_of_nodes()}")
     annots = th.FloatTensor(annots).to(device)
+    
     train_df, test_df = load_ppi_data(train_inter_file, test_inter_file)
+    
+    test_abs = int(len(train_df) * 0.8)
+    train_df, val_df = random_split(train_df, [test_abs, len(train_df) - test_abs])
+
+    train()
+    test()
+    
+
+def train():
     model = PPIModel(feat_dim, num_rels, num_bases, num_nodes)
     model.to(device)
     loss_func = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
     train_labels = th.FloatTensor(train_df['labels'].values).to(device)
+    val_labels = th.FloatTensor(val_df['labels'].values).to(device)
     test_labels = th.FloatTensor(test_df['labels'].values).to(device)
 
     train_data = GraphDataset(g, train_df, train_labels, annots, prot_idx)
+    val_data = GraphDataset(g, val_df, val_labels, annots, prot_idx)
     test_data = GraphDataset(g, test_df, test_labels, annots, prot_idx)
 
     train_set_batches = get_batches(train_data, batch_size)
+    val_set_batches = get_batches(val_data, batch_size)
     test_set_batches = get_batches(test_data, batch_size)
 
     for epoch in range(epochs):
@@ -100,21 +113,47 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
 
         
         model.eval()
-        test_loss = 0
+        val_loss = 0
         preds = []
         with th.no_grad():
-            with ck.progressbar(test_set_batches) as bar:
+            with ck.progressbar(val_set_batches) as bar:
                 for iter, (batch_g, batch_feat, batch_labels) in enumerate(bar):
                     logits = model(batch_g.to(device), batch_feat)
                     labels = batch_labels.unsqueeze(1).to(device)
                     loss = loss_func(logits, labels)
-                    test_loss += loss.detach().item()
+                    val_loss += loss.detach().item()
                     preds = np.append(preds, logits.cpu())
-                test_loss /= (iter+1)
+                val_loss /= (iter+1)
 
-        labels = test_df['labels'].values
+        labels = val_df['labels'].values
         roc_auc = compute_roc(labels, preds)
-        print(f'Epoch {epoch}: Loss - {epoch_loss}, \tTest loss - {test_loss}, \tAUC - {roc_auc}')
+        print(f'Epoch {epoch}: Loss - {epoch_loss}, \tVal loss - {val_loss}, \tAUC - {roc_auc}')
+
+        # with tune.checkpoint_dir(epoch) as checkpoint_dir:
+        #     path = os.path.join(checkpoint_dir, "checkpoint")
+        #     torch.save((model.state_dict(), optimizer.state_dict()), path)
+
+        # tune.report(loss=(val_loss), auc=roc_auc)
+    print("Finished Training")
+
+
+def test():
+    test_loss = 0
+    with th.no_grad():
+        with ck.progressbar(test_set_batches) as bar:
+            for iter, (batch_g, batch_feat, batch_labels) in enumerate(bar):
+                logits = model(batch_g.to(device), batch_feat)
+                labels = batch_labels.unsqueeze(1).to(device)
+                loss = loss_func(logits, labels)
+                val_loss += loss.detach().item()
+                preds = np.append(preds, logits.cpu())
+            test_loss /= (iter+1)
+
+    labels = test_df['labels'].values
+    roc_auc = compute_roc(labels, preds)
+    print(f'Epoch {epoch}: Loss - {epoch_loss}, \tTest loss - {test_loss}, \tAUC - {roc_auc}')
+
+    return roc_auc
 
 def compute_roc(labels, preds):
     # Compute ROC curve and ROC area for each class
@@ -160,7 +199,7 @@ class PPIModel(nn.Module):
                         self.h_dim, 
                         self.num_rels, 
                         self.num_bases,
-                        num_hidden_layers=1, 
+                        num_hidden_layers=2, 
                         dropout=0.8,
                         use_self_loop=False, 
                         use_cuda=True
