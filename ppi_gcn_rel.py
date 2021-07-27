@@ -52,7 +52,7 @@ import logging
     '--load', '-ld', is_flag=True, help='Load Model?')
 def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, batch_size, epochs, load):
 
-    global g, device, num_bases, num_nodes, num_rels, feat_dim, annots, prot_idx, loss_func
+    global g, num_nodes, annots, prot_idx, loss_func
     device = 'cuda'
    
     g, annots, prot_idx = load_graph_data(data_file)
@@ -72,8 +72,10 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
     
     
 
-    train(batch_size, epochs, data_file, train_inter_file, test_inter_file)
+    train(feat_dim, num_rels, num_bases, num_nodes, device, batch_size, epochs, data_file, train_inter_file, test_inter_file)
     test(batch_size, data_file, train_inter_file, test_inter_file)
+
+
     
 
 def load_data(train_inter_file, test_inter_file):
@@ -86,7 +88,7 @@ def load_data(train_inter_file, test_inter_file):
 
     return train_df, val_df, test_df
 
-def train(batch_size, epochs, data_file, train_inter_file, test_inter_file):
+def train(feat_dim, num_rels, num_bases, num_nodes, device, batch_size, epochs, data_file, train_inter_file, test_inter_file):
 
  
 

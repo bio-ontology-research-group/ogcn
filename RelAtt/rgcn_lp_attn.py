@@ -23,7 +23,12 @@ from relGraphConv import RelGraphConv
 
 import logging
 
+
 logging.basicConfig(level=logging.DEBUG)
+
+torch.manual_seed(0)
+np.random.seed(0)
+random.seed(0)
 
 from baseRGCN import BaseRGCN
 
