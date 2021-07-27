@@ -53,47 +53,50 @@ import logging
 def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, batch_size, epochs, load):
 
     device = 'cuda'
-    #
-    rels = ['part_of', 'regulates'] #, 'has_part', 'occurs_in']
-
-    g, annots, prot_idx = load_graph_data(data_file, rels = rels, with_disjoint = False, with_intersection = False, inverse = False)
+   
     
-    num_rels = len(g.canonical_etypes)
-    num_bases = 20
-    feat_dim = 2
- 
+    train(batch_size, epochs, data_file, train_inter_file, test_inter_file)
+    test()
+    
+
+def load_data(train_inter_file, test_inter_file):
+    train_df, test_df = load_ppi_data(train_inter_file, test_inter_file)
+    
+    split = int(len(train_df) * 0.8)
+    index = np.arange(len(train_df))
+    val_df = train_df.iloc[index[split:]]
+    train_df = train_df.iloc[index[:split]]
+
+    return train_df, val_df, test_df
+
+def train(batch_size, epochs, data_file, train_inter_file, test_inter_file,  device = 'cuda'):
+
+    g, annots, prot_idx = load_graph_data(data_file)
     g = dgl.to_homogeneous(g)
 
     num_nodes = g.number_of_nodes()
     print(f"Num nodes: {g.number_of_nodes()}")
+    
     annots = th.FloatTensor(annots).to(device)
-    
-    train_df, test_df = load_ppi_data(train_inter_file, test_inter_file)
-    
-    test_abs = int(len(train_df) * 0.8)
-    train_df, val_df = random_split(train_df, [test_abs, len(train_df) - test_abs])
+    num_rels = len(g.canonical_etypes)
+    num_bases = 20
+    feat_dim = 2
 
-    train()
-    test()
-    
+    train_df, val_df, _ = load_data(train_inter_file, test_inter_file)
 
-def train():
     model = PPIModel(feat_dim, num_rels, num_bases, num_nodes)
     model.to(device)
     loss_func = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     train_labels = th.FloatTensor(train_df['labels'].values).to(device)
     val_labels = th.FloatTensor(val_df['labels'].values).to(device)
-    test_labels = th.FloatTensor(test_df['labels'].values).to(device)
-
+    
     train_data = GraphDataset(g, train_df, train_labels, annots, prot_idx)
     val_data = GraphDataset(g, val_df, val_labels, annots, prot_idx)
-    test_data = GraphDataset(g, test_df, test_labels, annots, prot_idx)
-
+    
     train_set_batches = get_batches(train_data, batch_size)
     val_set_batches = get_batches(val_data, batch_size)
-    test_set_batches = get_batches(test_data, batch_size)
-
+    
     for epoch in range(epochs):
         epoch_loss = 0
         model.train()
@@ -265,7 +268,7 @@ def load_ppi_data(train_inter_file, test_inter_file):
     test_df = test_df.iloc[index[:1000]]
     return train_df, test_df
 
-def load_graph_data(data_file, rels = [], with_disjoint = False, with_intersection = False, inverse = False):
+def load_graph_data(data_file):
     # go = Ontology('data/go.obo', rels, with_disjoint, with_intersection, inverse)
     # nodes = list(go.ont.keys())
     # node_idx = {v: k for k, v in enumerate(nodes)}
