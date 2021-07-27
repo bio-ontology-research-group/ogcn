@@ -46,13 +46,12 @@ import logging
     '--batch-size', '-bs', default=32,
     help='Batch size for training')
 @ck.option(
-    '--epochs', '-ep', default=32,
+    '--epochs', '-ep', default=1,
     help='Training epochs')
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
 def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, batch_size, epochs, load):
 
-    global g, num_nodes, annots, prot_idx, loss_func
     device = 'cuda'
    
     g, annots, prot_idx = load_graph_data(data_file)
@@ -72,8 +71,8 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
     
     
 
-    train(feat_dim, num_rels, num_bases, num_nodes, device, batch_size, epochs, data_file, train_inter_file, test_inter_file)
-    test(batch_size, data_file, train_inter_file, test_inter_file)
+    train(g, annots, prot_idx, feat_dim, num_rels, num_bases, num_nodes, loss_func, device, batch_size, epochs, data_file, train_inter_file, test_inter_file)
+    test(g, annots, prot_idx, feat_dim, num_rels, num_bases, num_nodes, loss_func, device, batch_size, data_file, train_inter_file, test_inter_file)
 
 
     
@@ -88,7 +87,7 @@ def load_data(train_inter_file, test_inter_file):
 
     return train_df, val_df, test_df
 
-def train(feat_dim, num_rels, num_bases, num_nodes, device, batch_size, epochs, data_file, train_inter_file, test_inter_file):
+def train(g, annots, prot_idx, feat_dim, num_rels, num_bases, num_nodes, loss_func, device, batch_size, epochs, data_file, train_inter_file, test_inter_file):
 
  
 
@@ -156,7 +155,7 @@ def train(feat_dim, num_rels, num_bases, num_nodes, device, batch_size, epochs, 
     print("Finished Training")
 
 
-def test(batch_size, data_file, train_inter_file, test_inter_file):
+def test(g, annots, prot_idx, feat_dim, num_rels, num_bases, num_nodes, loss_func,device, batch_size, data_file, train_inter_file, test_inter_file):
 
     _, _, test_df = load_data(train_inter_file, test_inter_file)
     test_labels = th.FloatTensor(test_df['labels'].values).to(device)
