@@ -22,7 +22,7 @@ import os
 curr_path = os.path.dirname(os.path.abspath(__file__))
 
 
-def main(num_samples=10, max_num_epochs=10, gpus_per_trial=2):
+def main(num_samples, max_num_epochs, gpus_per_trial):
     
     #global g, annots
 
@@ -30,7 +30,7 @@ def main(num_samples=10, max_num_epochs=10, gpus_per_trial=2):
     train_inter_file = curr_path + '/data/4932.train_interactions.pkl'
     test_inter_file = curr_path + '/data/4932.test_interactions.pkl'
     
-    tuning(data_file, train_inter_file, test_inter_file)
+    tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_epochs, gpus_per_trial)
 
 def train_tune(config, data_file=None, train_inter_file=None, test_inter_file=None, checkpoint_dir = None):
     batch_size = config["batch_size"]
@@ -44,7 +44,7 @@ def train_tune(config, data_file=None, train_inter_file=None, test_inter_file=No
     train(n_hid, dropout, lr, batch_size, epochs, device, data_file, train_inter_file, test_inter_file)
 
 
-def tuning(data_file, train_inter_file, test_inter_file, num_samples=1, max_num_epochs=1, gpus_per_trial=1):
+def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_epochs, gpus_per_trial):
 
     feat_dim = 2
     num_bases = 20
@@ -83,7 +83,7 @@ def tuning(data_file, train_inter_file, test_inter_file, num_samples=1, max_num_
     print("Best trial config: {}".format(best_trial.config))
     print("Best trial final validation loss: {}".format(
         best_trial.last_result["loss"]))
-    print("Best trial final validation accuracy: {}".format(
+    print("Best trial final validation auc: {}".format(
         best_trial.last_result["auc"]))
 
     best_trained_model = PPIModel(feat_dim, num_rels, num_bases, num_nodes, best_trial.config["n_hid"], best_trial.config["dropout"])
@@ -99,12 +99,16 @@ def tuning(data_file, train_inter_file, test_inter_file, num_samples=1, max_num_
         best_checkpoint_dir, "checkpoint"))
     best_trained_model.load_state_dict(model_state)
 
-    test_loss, test_acc = test(best_trial.config["n_hid"], best_trial.config["dropout"], best_trial.config["batch_size"], device, data_file, train_inter_file, test_inter_file, model = best_trained_model)
-    print("Best trial test set accuracy: {}".format(test_acc))
+    test_loss, test_auc = test(best_trial.config["n_hid"], best_trial.config["dropout"], best_trial.config["batch_size"], device, data_file, train_inter_file, test_inter_file, model = best_trained_model)
     print("Best trial test set loss: {}".format(test_loss))
-
+    print("Best trial test set auc: {}".format(test_auc))
+   
 
 
 if __name__ == "__main__":
     # You can change the number of GPUs per trial here:
-    main()
+    num_samples = 10
+    max_num_epochs = 10
+    gpus_per_trial = 1
+
+    main(num_samples, max_num_epochs, gpus_per_trial)

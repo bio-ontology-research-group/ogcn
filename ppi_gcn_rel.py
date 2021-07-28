@@ -203,7 +203,7 @@ def test(n_hid, dropout, batch_size, device, data_file, train_inter_file, test_i
     roc_auc = compute_roc(labels, preds)
     print(f'Test loss - {test_loss}, \tAUC - {roc_auc}')
 
-    return roc_auc
+    return test_loss, roc_auc
 
 def compute_roc(labels, preds):
     # Compute ROC curve and ROC area for each class
