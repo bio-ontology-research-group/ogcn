@@ -40,7 +40,7 @@ from ppi_gcn_rel import load_data, train, load_graph_data
 
 def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, epochs, load, num_samples=10, max_num_epochs=10, gpus_per_trial=2):
     
-    global g
+    #global g, annots
     device = 'cuda'
    
     g, annots, prot_idx = load_graph_data(data_file)
@@ -58,14 +58,14 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
     loss_func = nn.BCELoss()
 
     
-    tuning(epochs, data_file, train_inter_file, test_inter_file)
+    tuning(g, annots, epochs, data_file, train_inter_file, test_inter_file)
 
-def train_tune(config, epochs, data_file, train_inter_file, test_inter_file):
+def train_tune(config, g=None, annots=None, epochs=None, data_file=None, train_inter_file=None, test_inter_file=None, checkpoint_dir = None):
     batch_size = config["batch_size"]
     train(g, annots, prot_idx, feat_dim, num_rels, num_bases, num_nodes, loss_func, device, batch_size, epochs, data_file, train_inter_file, test_inter_file)
 
 
-def tuning(epochs, data_file, train_inter_file, test_inter_file, num_samples=1, max_num_epochs=1, gpus_per_trial=1):
+def tuning(g, annots, epochs, data_file, train_inter_file, test_inter_file, num_samples=1, max_num_epochs=1, gpus_per_trial=1):
     
     load_data(train_inter_file, test_inter_file)
     
@@ -85,7 +85,13 @@ def tuning(epochs, data_file, train_inter_file, test_inter_file, num_samples=1, 
         # parameter_columns=["l1", "l2", "lr", "batch_size"],
         metric_columns=["loss", "auc"])
     result = tune.run(
-        partial(train_tune, epochs, data_file, train_inter_file, test_inter_file),
+        tune.with_parameters(train_tune, 
+                                g=g, 
+                                annots=annots, 
+                                epochs=epochs, 
+                                data_file=data_file, 
+                                train_inter_file = train_inter_file, 
+                                test_inter_file = test_inter_file),
         resources_per_trial={"cpu": 1, "gpu": gpus_per_trial},
         config=config,
         num_samples=num_samples,
