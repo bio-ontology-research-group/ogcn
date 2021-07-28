@@ -16,6 +16,7 @@ from dgl.nn.pytorch import RelGraphConv
 from baseRGCN import BaseRGCN
 from dgl.nn import GraphConv, AvgPooling, MaxPooling
 import random
+from ray import tune
 
 
 import logging
@@ -25,6 +26,8 @@ import logging
 #np.random.seed(0)
 #random.seed(0)
 
+import os
+curr_path = os.path.dirname(os.path.abspath(__file__))
 
 @ck.command()
 @ck.option(
@@ -53,26 +56,12 @@ import logging
 def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, batch_size, epochs, load):
 
     device = 'cuda'
-   
-    g, annots, prot_idx = load_graph_data(data_file)
-    
-    num_nodes = g.number_of_nodes()
-    print(f"Num nodes: {g.number_of_nodes()}")
-    
-    annots = th.FloatTensor(annots).to(device)
-    num_rels = len(g.canonical_etypes)
+    n_hid = 2
+    dropout = 0.8
+    lr = 0.001
 
-    g = dgl.to_homogeneous(g)
-
-    num_bases = 20
-    feat_dim = 2
-    loss_func = nn.BCELoss()
-
-    
-    
-
-    train(g, annots, prot_idx, feat_dim, num_rels, num_bases, num_nodes, loss_func, device, batch_size, epochs, data_file, train_inter_file, test_inter_file)
-    test(g, annots, prot_idx, feat_dim, num_rels, num_bases, num_nodes, loss_func, device, batch_size, data_file, train_inter_file, test_inter_file)
+    train(n_hid, dropout, lr, batch_size, epochs, device, data_file, train_inter_file, test_inter_file)
+    test(n_hid, dropout, batch_size, device, data_file, train_inter_file, test_inter_file)
 
 
     
@@ -87,15 +76,27 @@ def load_data(train_inter_file, test_inter_file):
 
     return train_df, val_df, test_df
 
-def train(g, annots, prot_idx, feat_dim, num_rels, num_bases, num_nodes, loss_func, device, batch_size, epochs, data_file, train_inter_file, test_inter_file):
+def train(n_hid, dropout, lr, batch_size, epochs, device, data_file, train_inter_file, test_inter_file):
 
- 
+    g, annots, prot_idx = load_graph_data(data_file)
+    
+    num_nodes = g.number_of_nodes()
+    print(f"Num nodes: {g.number_of_nodes()}")
+    
+    annots = th.FloatTensor(annots).to(device)
+    num_rels = len(g.canonical_etypes)
+
+    g = dgl.to_homogeneous(g)
+
+    num_bases = 20
+    feat_dim = 2
+    loss_func = nn.BCELoss()
 
     train_df, val_df, _ = load_data(train_inter_file, test_inter_file)
 
-    model = PPIModel(feat_dim, num_rels, num_bases, num_nodes)
+    model = PPIModel(feat_dim, num_rels, num_bases, num_nodes, n_hid, dropout)
     model.to(device)
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=lr)
     train_labels = th.FloatTensor(train_df['labels'].values).to(device)
     val_labels = th.FloatTensor(val_df['labels'].values).to(device)
     
@@ -144,18 +145,34 @@ def train(g, annots, prot_idx, feat_dim, num_rels, num_bases, num_nodes, loss_fu
         roc_auc = compute_roc(labels, preds)
         if roc_auc > best_roc_auc:
             best_roc_auc = roc_auc
-            th.save(model.state_dict(), 'data/model_rel.pt')
+            th.save(model.state_dict(), curr_path + '/data/model_rel.pt')
         print(f'Epoch {epoch}: Loss - {epoch_loss}, \tVal loss - {val_loss}, \tAUC - {roc_auc}')
 
         with tune.checkpoint_dir(epoch) as checkpoint_dir:
             path = os.path.join(checkpoint_dir, "checkpoint")
-            torch.save((model.state_dict(), optimizer.state_dict()), path)
+            th.save((model.state_dict(), optimizer.state_dict()), path)
 
         tune.report(loss=(val_loss), auc=roc_auc)
     print("Finished Training")
 
 
-def test(g, annots, prot_idx, feat_dim, num_rels, num_bases, num_nodes, loss_func,device, batch_size, data_file, train_inter_file, test_inter_file):
+def test(n_hid, dropout, batch_size, device, data_file, train_inter_file, test_inter_file, model=None):
+
+    g, annots, prot_idx = load_graph_data(data_file)
+    
+    num_nodes = g.number_of_nodes()
+    print(f"Num nodes: {g.number_of_nodes()}")
+    
+    annots = th.FloatTensor(annots).to(device)
+    num_rels = len(g.canonical_etypes)
+
+    g = dgl.to_homogeneous(g)
+
+
+    num_bases = 20
+    feat_dim = 2
+    loss_func = nn.BCELoss()
+
 
     _, _, test_df = load_data(train_inter_file, test_inter_file)
     test_labels = th.FloatTensor(test_df['labels'].values).to(device)
@@ -164,8 +181,9 @@ def test(g, annots, prot_idx, feat_dim, num_rels, num_bases, num_nodes, loss_fun
     
     test_set_batches = get_batches(test_data, batch_size)
 
-    model = PPIModel(feat_dim, num_rels, num_bases, num_nodes)
-    model.load_state_dict(th.load('data/model_rel.pt'))
+    if model == None:
+        model = PPIModel(feat_dim, num_rels, num_bases, num_nodes, n_hid, dropout)
+        model.load_state_dict(th.load('data/model_rel.pt'))
     model.to(device)
     model.eval()
     test_loss = 0
@@ -215,7 +233,7 @@ class RGCN(BaseRGCN):
 
 class PPIModel(nn.Module):
 
-    def __init__(self, h_dim, num_rels, num_bases, num_nodes):
+    def __init__(self, h_dim, num_rels, num_bases, num_nodes, n_hid, dropout):
         super().__init__()
         
         self.h_dim = h_dim
@@ -231,8 +249,8 @@ class PPIModel(nn.Module):
                         self.h_dim, 
                         self.num_rels, 
                         self.num_bases,
-                        num_hidden_layers=2, 
-                        dropout=0.8,
+                        num_hidden_layers=n_hid, 
+                        dropout=dropout,
                         use_self_loop=False, 
                         use_cuda=True
                         )
@@ -305,12 +323,12 @@ def load_graph_data(data_file):
 
     # g = go.toDGLGraph()
     
-    graphs, data_dict = dgl.load_graphs('data/go_cat.bin')
+    graphs, data_dict = dgl.load_graphs(curr_path + '/data/go_cat.bin')
     g = graphs[0]
 
     num_nodes = g.number_of_nodes()
     
-    with open("data/nodes_cat.pkl", "rb") as pkl_file:
+    with open(curr_path + "/data/nodes_cat.pkl", "rb") as pkl_file:
         node_idx = pkl.load(pkl_file)
     g = dgl.add_self_loop(g, 'id')
     

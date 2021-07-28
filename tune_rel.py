@@ -4,6 +4,7 @@ import numpy as np
 import os
 import torch as th
 import torch.nn as nn
+import dgl
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import random_split
@@ -13,64 +14,47 @@ from ray import tune
 from ray.tune import CLIReporter
 from ray.tune.schedulers import ASHAScheduler
 
-import dgl
-from ppi_gcn_rel import load_data, train, load_graph_data
 
-@ck.command()
-@ck.option(
-    '--train-inter-file', '-trif', default='data/4932.train_interactions.pkl',
-    help='Interactions file (deepint_data.py)')
-@ck.option(
-    '--test-inter-file', '-tsif', default='data/4932.test_interactions.pkl',
-    help='Interactions file (deepint_data.py)')
-@ck.option(
-    '--data-file', '-df', default='data/swissprot.pkl',
-    help='Data file with protein sequences')
-@ck.option(
-    '--deepgo-model', '-dm', default='data/deepgoplus.h5',
-    help='DeepGOPlus prediction model')
-@ck.option(
-    '--model-file', '-mf', default='data/9606.model.h5',
-    help='DeepGOPlus prediction model')
-@ck.option(
-    '--epochs', '-ep', default=32,
-    help='Training epochs')
-@ck.option(
-    '--load', '-ld', is_flag=True, help='Load Model?')
+from ppi_gcn_rel import load_data, train, test, load_graph_data, PPIModel, GraphDataset, get_batches
 
-def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, epochs, load, num_samples=10, max_num_epochs=10, gpus_per_trial=2):
+
+import os
+curr_path = os.path.dirname(os.path.abspath(__file__))
+
+
+def main(num_samples=10, max_num_epochs=10, gpus_per_trial=2):
     
     #global g, annots
-    device = 'cuda'
-   
-    g, annots, prot_idx = load_graph_data(data_file)
+
+    data_file = curr_path + '/data/swissprot.pkl'
+    train_inter_file = curr_path + '/data/4932.train_interactions.pkl'
+    test_inter_file = curr_path + '/data/4932.test_interactions.pkl'
     
-    num_nodes = g.number_of_nodes()
-    print(f"Num nodes: {g.number_of_nodes()}")
-    
-    annots = th.FloatTensor(annots).to(device)
-    num_rels = len(g.canonical_etypes)
+    tuning(data_file, train_inter_file, test_inter_file)
 
-    g = dgl.to_homogeneous(g)
-
-    num_bases = 20
-    feat_dim = 2
-    loss_func = nn.BCELoss()
-
-    
-    tuning(g, annots, epochs, data_file, train_inter_file, test_inter_file)
-
-def train_tune(config, g=None, annots=None, epochs=None, data_file=None, train_inter_file=None, test_inter_file=None, checkpoint_dir = None):
+def train_tune(config, data_file=None, train_inter_file=None, test_inter_file=None, checkpoint_dir = None):
     batch_size = config["batch_size"]
-    train(g, annots, prot_idx, feat_dim, num_rels, num_bases, num_nodes, loss_func, device, batch_size, epochs, data_file, train_inter_file, test_inter_file)
+    n_hid = config["n_hid"]
+    dropout = config["dropout"]
+    lr = config["lr"]
 
 
-def tuning(g, annots, epochs, data_file, train_inter_file, test_inter_file, num_samples=1, max_num_epochs=1, gpus_per_trial=1):
+    device = 'cuda'
+    epochs = 2
+    train(n_hid, dropout, lr, batch_size, epochs, device, data_file, train_inter_file, test_inter_file)
+
+
+def tuning(data_file, train_inter_file, test_inter_file, num_samples=1, max_num_epochs=1, gpus_per_trial=1):
+
+    feat_dim = 2
+    num_bases = 20
+    num_rels = 7
+    num_nodes = 50653
     
     load_data(train_inter_file, test_inter_file)
     
     config = {
-        "n_layers": tune.choice([1, 2, 3]),
+        "n_hid": tune.choice([1, 2, 3]),
         "dropout": tune.choice([x/10 for x in range(1,9)]),
         "lr": tune.loguniform(1e-4, 1e-1),
         "batch_size": tune.choice([8, 16, 32])
@@ -86,9 +70,6 @@ def tuning(g, annots, epochs, data_file, train_inter_file, test_inter_file, num_
         metric_columns=["loss", "auc"])
     result = tune.run(
         tune.with_parameters(train_tune, 
-                                g=g, 
-                                annots=annots, 
-                                epochs=epochs, 
                                 data_file=data_file, 
                                 train_inter_file = train_inter_file, 
                                 test_inter_file = test_inter_file),
@@ -103,9 +84,9 @@ def tuning(g, annots, epochs, data_file, train_inter_file, test_inter_file, num_
     print("Best trial final validation loss: {}".format(
         best_trial.last_result["loss"]))
     print("Best trial final validation accuracy: {}".format(
-        best_trial.last_result["accuracy"]))
+        best_trial.last_result["auc"]))
 
-    best_trained_model = Net(best_trial.config["l1"], best_trial.config["l2"])
+    best_trained_model = PPIModel(feat_dim, num_rels, num_bases, num_nodes, best_trial.config["n_hid"], best_trial.config["dropout"])
     device = "cpu"
     if th.cuda.is_available():
         device = "cuda:0"
@@ -118,8 +99,9 @@ def tuning(g, annots, epochs, data_file, train_inter_file, test_inter_file, num_
         best_checkpoint_dir, "checkpoint"))
     best_trained_model.load_state_dict(model_state)
 
-    test_acc = test(best_trained_model, device)
+    test_loss, test_acc = test(best_trial.config["n_hid"], best_trial.config["dropout"], best_trial.config["batch_size"], device, data_file, train_inter_file, test_inter_file, model = best_trained_model)
     print("Best trial test set accuracy: {}".format(test_acc))
+    print("Best trial test set loss: {}".format(test_loss))
 
 
 
