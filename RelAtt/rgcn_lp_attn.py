@@ -283,7 +283,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='RGCN')
     parser.add_argument("--dropout", type=float, default=0.2,
             help="dropout probability")
-    parser.add_argument("--attn-drop", type=float, default=0.2,
+    parser.add_argument("--attn-drop", type=float, default=0.1,
             help="attention dropout probability")
     parser.add_argument("--n-hidden", type=int, default=500,
             help="number of hidden units")

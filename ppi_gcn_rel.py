@@ -147,11 +147,11 @@ def train(g, annots, prot_idx, feat_dim, num_rels, num_bases, num_nodes, loss_fu
             th.save(model.state_dict(), 'data/model_rel.pt')
         print(f'Epoch {epoch}: Loss - {epoch_loss}, \tVal loss - {val_loss}, \tAUC - {roc_auc}')
 
-        # with tune.checkpoint_dir(epoch) as checkpoint_dir:
-        #     path = os.path.join(checkpoint_dir, "checkpoint")
-        #     torch.save((model.state_dict(), optimizer.state_dict()), path)
+        with tune.checkpoint_dir(epoch) as checkpoint_dir:
+            path = os.path.join(checkpoint_dir, "checkpoint")
+            torch.save((model.state_dict(), optimizer.state_dict()), path)
 
-        # tune.report(loss=(val_loss), auc=roc_auc)
+        tune.report(loss=(val_loss), auc=roc_auc)
     print("Finished Training")
 
 
@@ -288,7 +288,7 @@ def load_ppi_data(train_inter_file, test_inter_file):
     index = np.arange(len(train_df))
     np.random.seed(seed=0)
     np.random.shuffle(index)
-    train_df = train_df.iloc[index[:10000]]
+    train_df = train_df.iloc[index[:1000]]
     
     test_df = pd.read_pickle(test_inter_file)
     index = np.arange(len(test_df))

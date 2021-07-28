@@ -33,17 +33,14 @@ from ppi_gcn_rel import load_data, train, load_graph_data
     '--model-file', '-mf', default='data/9606.model.h5',
     help='DeepGOPlus prediction model')
 @ck.option(
-    '--batch-size', '-bs', default=32,
-    help='Batch size for training')
-@ck.option(
     '--epochs', '-ep', default=32,
     help='Training epochs')
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
 
-def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, batch_size, epochs, load, num_samples=10, max_num_epochs=10, gpus_per_trial=2):
+def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, epochs, load, num_samples=10, max_num_epochs=10, gpus_per_trial=2):
     
-    global g, device, annots, prot_idx, loss_func
+    global g
     device = 'cuda'
    
     g, annots, prot_idx = load_graph_data(data_file)
@@ -61,13 +58,14 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
     loss_func = nn.BCELoss()
 
     
-    train(feat_dim, num_rels, num_bases, num_nodes, device, batch_size, epochs, data_file, train_inter_file, test_inter_file)
-    test(batch_size, data_file, train_inter_file, test_inter_file)
+    tuning(epochs, data_file, train_inter_file, test_inter_file)
 
-    
-    tuning(train_inter_file, test_inter_file)
+def train_tune(config, epochs, data_file, train_inter_file, test_inter_file):
+    batch_size = config["batch_size"]
+    train(g, annots, prot_idx, feat_dim, num_rels, num_bases, num_nodes, loss_func, device, batch_size, epochs, data_file, train_inter_file, test_inter_file)
 
-def tuning(train_inter_file, test_inter_file, num_samples=10, max_num_epochs=10, gpus_per_trial=2):
+
+def tuning(epochs, data_file, train_inter_file, test_inter_file, num_samples=1, max_num_epochs=1, gpus_per_trial=1):
     
     load_data(train_inter_file, test_inter_file)
     
@@ -78,23 +76,23 @@ def tuning(train_inter_file, test_inter_file, num_samples=10, max_num_epochs=10,
         "batch_size": tune.choice([8, 16, 32])
     }
     scheduler = ASHAScheduler(
-        metric="loss",
-        mode="min",
+        metric="auc",
+        mode="max",
         max_t=max_num_epochs,
         grace_period=1,
         reduction_factor=2)
     reporter = CLIReporter(
         # parameter_columns=["l1", "l2", "lr", "batch_size"],
-        metric_columns=["loss", "accuracy", "training_iteration"])
+        metric_columns=["loss", "auc"])
     result = tune.run(
-        partial(train, batch_size, epochs, data_file, train_inter_file, test_inter_file),
-        resources_per_trial={"cpu": 2, "gpu": gpus_per_trial},
+        partial(train_tune, epochs, data_file, train_inter_file, test_inter_file),
+        resources_per_trial={"cpu": 1, "gpu": gpus_per_trial},
         config=config,
         num_samples=num_samples,
         scheduler=scheduler,
         progress_reporter=reporter)
 
-    best_trial = result.get_best_trial("loss", "min", "last")
+    best_trial = result.get_best_trial("auc", "max", "last")
     print("Best trial config: {}".format(best_trial.config))
     print("Best trial final validation loss: {}".format(
         best_trial.last_result["loss"]))
@@ -114,7 +112,7 @@ def tuning(train_inter_file, test_inter_file, num_samples=10, max_num_epochs=10,
         best_checkpoint_dir, "checkpoint"))
     best_trained_model.load_state_dict(model_state)
 
-    test_acc = test_accuracy(best_trained_model, device)
+    test_acc = test(best_trained_model, device)
     print("Best trial test set accuracy: {}".format(test_acc))
 
 
