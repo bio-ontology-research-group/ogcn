@@ -55,13 +55,12 @@ curr_path = os.path.dirname(os.path.abspath(__file__))
     '--load', '-ld', is_flag=True, help='Load Model?')
 def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, batch_size, epochs, load):
 
-    device = 'cuda'
-    n_hid = 2
-    dropout = 0.8
-    lr = 0.001
+    n_hid = 1
+    dropout = 0.1
+    lr = 0.003928523779653357
 
-    train(n_hid, dropout, lr, batch_size, epochs, device, data_file, train_inter_file, test_inter_file)
-    test(n_hid, dropout, batch_size, device, data_file, train_inter_file, test_inter_file)
+    train(n_hid, dropout, lr, batch_size, epochs, data_file, train_inter_file, test_inter_file)
+    test(n_hid, dropout, batch_size, data_file, train_inter_file, test_inter_file)
 
 
     
@@ -76,27 +75,43 @@ def load_data(train_inter_file, test_inter_file):
 
     return train_df, val_df, test_df
 
-def train(n_hid, dropout, lr, batch_size, epochs, device, data_file, train_inter_file, test_inter_file):
+def train(n_hid, dropout, lr, batch_size, epochs, data_file, train_inter_file, test_inter_file, checkpoint_dir = None):
 
     g, annots, prot_idx = load_graph_data(data_file)
     
     num_nodes = g.number_of_nodes()
     print(f"Num nodes: {g.number_of_nodes()}")
     
-    annots = th.FloatTensor(annots).to(device)
     num_rels = len(g.canonical_etypes)
 
     g = dgl.to_homogeneous(g)
 
-    num_bases = 20
+    num_bases = 7
     feat_dim = 2
     loss_func = nn.BCELoss()
 
     train_df, val_df, _ = load_data(train_inter_file, test_inter_file)
 
     model = PPIModel(feat_dim, num_rels, num_bases, num_nodes, n_hid, dropout)
+
+    device = "cpu"
+    if th.cuda.is_available():
+        device = "cuda:0"
+        if th.cuda.device_count() > 1:
+            model = nn.DataParallel(model)
+    
+    annots = th.FloatTensor(annots).to(device)
+
+
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
+
+    if checkpoint_dir:
+        model_state, optimizer_state = torch.load(
+            os.path.join(checkpoint_dir, "checkpoint"))
+        model.load_state_dict(model_state)
+        optimizer.load_state_dict(optimizer_state)
+
     train_labels = th.FloatTensor(train_df['labels'].values).to(device)
     val_labels = th.FloatTensor(val_df['labels'].values).to(device)
     
@@ -143,10 +158,10 @@ def train(n_hid, dropout, lr, batch_size, epochs, device, data_file, train_inter
                 val_loss /= (iter+1)
 
         roc_auc = compute_roc(labels, preds)
-        if roc_auc > best_roc_auc:
-            best_roc_auc = roc_auc
-            th.save(model.state_dict(), curr_path + '/data/model_rel.pt')
-        print(f'Epoch {epoch}: Loss - {epoch_loss}, \tVal loss - {val_loss}, \tAUC - {roc_auc}')
+        # if roc_auc > best_roc_auc:
+        #     best_roc_auc = roc_auc
+        #     th.save(model.state_dict(), curr_path + '/data/model_rel.pt')
+        # print(f'Epoch {epoch}: Loss - {epoch_loss}, \tVal loss - {val_loss}, \tAUC - {roc_auc}')
 
         with tune.checkpoint_dir(epoch) as checkpoint_dir:
             path = os.path.join(checkpoint_dir, "checkpoint")
@@ -156,8 +171,9 @@ def train(n_hid, dropout, lr, batch_size, epochs, device, data_file, train_inter
     print("Finished Training")
 
 
-def test(n_hid, dropout, batch_size, device, data_file, train_inter_file, test_inter_file, model=None):
+def test(n_hid, dropout, batch_size, data_file, train_inter_file, test_inter_file, model=None):
 
+    device = "cpu"
     g, annots, prot_idx = load_graph_data(data_file)
     
     num_nodes = g.number_of_nodes()
@@ -169,7 +185,7 @@ def test(n_hid, dropout, batch_size, device, data_file, train_inter_file, test_i
     g = dgl.to_homogeneous(g)
 
 
-    num_bases = 20
+    num_bases = 7
     feat_dim = 2
     loss_func = nn.BCELoss()
 
@@ -306,7 +322,7 @@ def load_ppi_data(train_inter_file, test_inter_file):
     index = np.arange(len(train_df))
     np.random.seed(seed=0)
     np.random.shuffle(index)
-    train_df = train_df.iloc[index[:1000]]
+    train_df = train_df.iloc[index[:10000]]
     
     test_df = pd.read_pickle(test_inter_file)
     index = np.arange(len(test_df))

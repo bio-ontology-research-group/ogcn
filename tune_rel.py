@@ -39,15 +39,14 @@ def train_tune(config, data_file=None, train_inter_file=None, test_inter_file=No
     lr = config["lr"]
 
 
-    device = 'cuda'
     epochs = 2
-    train(n_hid, dropout, lr, batch_size, epochs, device, data_file, train_inter_file, test_inter_file)
+    train(n_hid, dropout, lr, batch_size, epochs, data_file, train_inter_file, test_inter_file)
 
 
 def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_epochs, gpus_per_trial):
 
     feat_dim = 2
-    num_bases = 20
+    num_bases = 7
     num_rels = 7
     num_nodes = 50653
     
@@ -63,7 +62,7 @@ def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_ep
         metric="auc",
         mode="max",
         max_t=max_num_epochs,
-        grace_period=1,
+        grace_period=10,
         reduction_factor=2)
     reporter = CLIReporter(
         # parameter_columns=["l1", "l2", "lr", "batch_size"],
@@ -73,7 +72,7 @@ def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_ep
                                 data_file=data_file, 
                                 train_inter_file = train_inter_file, 
                                 test_inter_file = test_inter_file),
-        resources_per_trial={"cpu": 1, "gpu": gpus_per_trial},
+        resources_per_trial={"cpu": gpus_per_trial, "gpu": gpus_per_trial},
         config=config,
         num_samples=num_samples,
         scheduler=scheduler,
@@ -99,7 +98,7 @@ def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_ep
         best_checkpoint_dir, "checkpoint"))
     best_trained_model.load_state_dict(model_state)
 
-    test_loss, test_auc = test(best_trial.config["n_hid"], best_trial.config["dropout"], best_trial.config["batch_size"], device, data_file, train_inter_file, test_inter_file, model = best_trained_model)
+    test_loss, test_auc = test(best_trial.config["n_hid"], best_trial.config["dropout"], best_trial.config["batch_size"], data_file, train_inter_file, test_inter_file, model = best_trained_model)
     print("Best trial test set loss: {}".format(test_loss))
     print("Best trial test set auc: {}".format(test_auc))
    
@@ -107,7 +106,7 @@ def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_ep
 
 if __name__ == "__main__":
     # You can change the number of GPUs per trial here:
-    num_samples = 10
+    num_samples = 200
     max_num_epochs = 10
     gpus_per_trial = 1
 
