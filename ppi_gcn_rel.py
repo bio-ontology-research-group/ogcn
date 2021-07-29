@@ -49,7 +49,7 @@ curr_path = os.path.dirname(os.path.abspath(__file__))
     '--batch-size', '-bs', default=32,
     help='Batch size for training')
 @ck.option(
-    '--epochs', '-ep', default=1,
+    '--epochs', '-ep', default=32,
     help='Training epochs')
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
@@ -75,7 +75,7 @@ def load_data(train_inter_file, test_inter_file):
 
     return train_df, val_df, test_df
 
-def train(n_hid, dropout, lr, batch_size, epochs, data_file, train_inter_file, test_inter_file, checkpoint_dir = None):
+def train(n_hid, dropout, lr, batch_size, epochs, data_file, train_inter_file, test_inter_file, checkpoint_dir = None, tuning= False):
 
     g, annots, prot_idx = load_graph_data(data_file)
     
@@ -158,14 +158,16 @@ def train(n_hid, dropout, lr, batch_size, epochs, data_file, train_inter_file, t
                 val_loss /= (iter+1)
 
         roc_auc = compute_roc(labels, preds)
-        # if roc_auc > best_roc_auc:
-        #     best_roc_auc = roc_auc
-        #     th.save(model.state_dict(), curr_path + '/data/model_rel.pt')
-        # print(f'Epoch {epoch}: Loss - {epoch_loss}, \tVal loss - {val_loss}, \tAUC - {roc_auc}')
+        if not tuning:
+            if roc_auc > best_roc_auc:
+                best_roc_auc = roc_auc
+                th.save(model.state_dict(), curr_path + '/data/model_rel.pt')
+            print(f'Epoch {epoch}: Loss - {epoch_loss}, \tVal loss - {val_loss}, \tAUC - {roc_auc}')
 
-        with tune.checkpoint_dir(epoch) as checkpoint_dir:
-            path = os.path.join(checkpoint_dir, "checkpoint")
-            th.save((model.state_dict(), optimizer.state_dict()), path)
+        if tuning:
+            with tune.checkpoint_dir(epoch) as checkpoint_dir:
+                path = os.path.join(checkpoint_dir, "checkpoint")
+                th.save((model.state_dict(), optimizer.state_dict()), path)
 
         tune.report(loss=(val_loss), auc=roc_auc)
     print("Finished Training")
