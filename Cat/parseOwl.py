@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.DEBUG)
 #JPype imports
 import jpype
 import jpype.imports
-jars_dir = "../jars/"
+jars_dir = "../gateway/build/distributions/gateway/lib/"
 jars = f'{str.join(":", [jars_dir + name for name in os.listdir(jars_dir)])}'
 
 if not jpype.isJVMStarted():
@@ -23,6 +23,8 @@ if not jpype.isJVMStarted():
 from org.semanticweb.owlapi.apibinding import OWLManager
 from org.semanticweb.owlapi.model.parameters import Imports
 from java.io import File
+from java.lang import String
+from org.ogcn import Hello
 
 #DGL imports
 import dgl
@@ -30,6 +32,9 @@ import dgl
 
 def main():
     ont_manager = OWLManager.createOWLOntologyManager()
+
+
+    Hello.main([String("")])
 
     global data_factory
     data_factory = ont_manager.getOWLDataFactory()

@@ -142,3 +142,7 @@ dmypy.json
 **job*
 
 *checkpoint*
+
+gateway/build/
+gateway/.gradle
+.gradle/
