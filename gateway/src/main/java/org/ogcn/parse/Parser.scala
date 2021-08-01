@@ -34,5 +34,12 @@ class Parser(var ont_path:String){
 
     def goClassToStr(goClass: OWLClass) = goClass.toStringID.split("/").last.replace("_", ":")
     
-    def processGOClass(go_class: OWLClass): List[Edge] = List[Edge]()
+    def processGOClass(go_class: OWLClass): List[Edge] = {
+        val axioms = ontology.getAxioms(go_class).asScala.toList
+
+        val edges = axioms.flatMap(processAxiom(go_class, _: OWLClassAxiom))
+        edges
+    }
+
+    def processAxiom(go_class: OWLClass, axiom: OWLClassAxiom): List[Edge] = List()
 }
