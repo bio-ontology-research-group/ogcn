@@ -24,7 +24,6 @@ from org.semanticweb.owlapi.apibinding import OWLManager
 from org.semanticweb.owlapi.model.parameters import Imports
 from java.io import File
 from java.lang import String
-from org.ogcn import Hello
 
 #DGL imports
 import dgl
@@ -34,7 +33,6 @@ def main():
     ont_manager = OWLManager.createOWLOntologyManager()
 
 
-    Hello.main([String("")])
 
     global data_factory
     data_factory = ont_manager.getOWLDataFactory()
