@@ -34,6 +34,8 @@ class Parser(var ont_path: String) {
        
         
         val edges = go_classes.foldLeft(id_edges){(acc, x) => acc ::: processGOClass(x)}
+
+        edges.asJava
     }
 
     
@@ -59,7 +61,8 @@ class Parser(var ont_path: String) {
                 parseSubClassAxiom(ax.getSubClass.asInstanceOf[OWLClass], ax.getSuperClass)
             }
             case "DisjointClasses" => {
-                
+                var ax = axiom.asInstanceOf[OWLDisjointClassesAxiom].getClassExpressionsAsList.asScala.toList
+                ax.tail.flatMap(parseDisjointnessAxiom(go_class, _: OWLClassExpression))
             }
             case _ =>  throw new Exception(s"Not parsing axiom $axiomType")
         }
@@ -78,6 +81,22 @@ class Parser(var ont_path: String) {
             case _ =>  throw new Exception(s"Not parsing EquivalentClass rigth side $exprType")
         }
 
+    }
+
+    def parseDisjointnessAxiom(go_class: OWLClass, rightSideExpr: OWLClassExpression) = {
+        val exprType = rightSideExpr.getClassExpressionType().getName()
+
+        val left_proj = new Edge("Bottom", "projects", go_class)
+
+        exprType match {
+            case "Class" => {
+                val expr = rightSideExpr.asInstanceOf[OWLClass]
+                val right_proj = new Edge("Bottom", "projects", expr)
+                
+                left_proj :: right_proj :: Nil
+            }
+            case _ => throw new Exception(s"Not parsing Disjointness rigth side $exprType")
+        }
     }
 
     def parseSubClassAxiom(go_class: OWLClass, superClass: OWLClassExpression) = {

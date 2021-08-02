@@ -1,8 +1,12 @@
+import java.util.ArrayList;
+import java.util.List;
+
 import com.beust.jcommander.JCommander;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.ogcn.parse.*;
+import org.ogcn.parse.Types.*;
 
 public class Main {
 

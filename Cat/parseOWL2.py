@@ -20,7 +20,7 @@ from org.ogcn.parse import Parser
 
 def main():
 
-    parser = Parser("/home/zhapacfp/Github/ogcn/data/go.owl")
+    parser = Parser("../data/go.owl")
 
     edges = parser.parse()
 
@@ -28,7 +28,10 @@ def main():
 
     logging.debug(f"First edge: {edges[0]}")
     graph = {}
-    for go_class_1, rel, go_class_2 in edges:
+    for edge in edges:
+        go_class_1 = edge.src
+        rel = edge.rel
+        go_class_2 = edge.dst
         key = ("node", rel, "node")
         if not key in graph:
             graph[key] = list()

@@ -19,7 +19,7 @@ object Types {
     case class Equivalent(leftSide: GOClass, rightSide: List[Expression])
 
 
-    class Edge(src:GOClass, rel:Relation, dst:GOClass){
+    class Edge(val src:GOClass, val rel:Relation, val dst:GOClass){
         def this(src: OWLClass, rel: Relation, dst: OWLClass) = this(goClassToStr(src), rel, goClassToStr(dst))
         def this(src: String, rel: Relation, dst: OWLClass) = this(src, rel, goClassToStr(dst))
         def this(src: OWLClass, rel: Relation, dst: String) = this(goClassToStr(src), rel, dst)
