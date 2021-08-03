@@ -1,9 +1,13 @@
 package org.ogcn.parse
 
-// Java imports
+// OWL API imports
 import org.semanticweb.owlapi.model._
 import org.semanticweb.owlapi.apibinding.OWLManager
 import org.semanticweb.owlapi.model.parameters.Imports
+
+
+
+// Java imports
 import java.io.File
 
 
@@ -14,9 +18,9 @@ import org.ogcn.parse.Types._
 
 class Parser(var ont_path: String) {
 
-    val ont_manager = OWLManager.createOWLOntologyManager()
-    val ontology = ont_manager.loadOntologyFromOntologyDocument(new File(ont_path))
-    val data_factory = ont_manager.getOWLDataFactory()
+    private val ont_manager = OWLManager.createOWLOntologyManager()
+    private val ontology = ont_manager.loadOntologyFromOntologyDocument(new File(ont_path))
+    private val data_factory = ont_manager.getOWLDataFactory()
 
     var rel_counter = 0
 
@@ -24,18 +28,19 @@ class Parser(var ont_path: String) {
            
         val axioms = ontology.getAxioms()
         val imports = Imports.fromBoolean(false)
-
         val go_classes = ontology.getClassesInSignature(imports).asScala.toList
 
-        val node_idx = ("Top"::go_classes.map(goClassToStr)).zipWithIndex.map{case (v, i) => (i,v)}.toMap
-
-        val id_edges = go_classes.map((x) => new Edge(x, "id", x))
 
        
         
-        val edges = go_classes.foldLeft(id_edges){(acc, x) => acc ::: processGOClass(x)}
+        val edges = go_classes.foldLeft(List[Edge]()){(acc, x) => acc ::: processGOClass(x)}
 
-        edges.asJava
+        val nodes = getNodes(edges)
+
+        val id_edges = nodes.map((x) => new Edge(x, "id", x)).toList
+
+
+        (id_edges ::: edges).asJava
     }
 
     
@@ -103,34 +108,13 @@ class Parser(var ont_path: String) {
         val superClassType = superClass.getClassExpressionType.getName
 
         val neg_sub = new Edge(s"Not_${goClassToStr(go_class)}", "negate", go_class)
-        val injection_sub = new Edge(go_class, "injects", "Top")
 
-        superClassType match {
-            case "Class" => {
-                val superC = superClass.asInstanceOf[OWLClass]
-                val injection_super = new Edge(superC, "injects", "Top")
+        val injection_sub = parseUnion(Top, go_class, "SubClass") // new Edge(go_class, "injects", "Top")
 
-                neg_sub :: injection_sub :: injection_super :: Nil
-            }
-            case "ObjectSomeValuesFrom" => {
-                val superC = superClass.asInstanceOf[OWLObjectSomeValuesFrom]
+        val injection_super = parseUnion(Top, superClass, "SubClass")
 
-                val(rel, src_class) = parseObjectSomeValuesFrom(superC, true)
+        neg_sub :: injection_sub :: injection_super :: Nil
 
-                val src_type = src_class.getClassExpressionType.getName
-            
-                src_type match {
-                    case "Class" => {
-                        val src = src_class.asInstanceOf[OWLClass]
-                        val injection_super = new Edge(src, rel, "Top")
-                        neg_sub :: injection_sub :: injection_super :: Nil
-                    }
-                    case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(SubClass) $src_type")
-                }
-            }
-            
-            case _ =>  throw new Exception(s"Not parsing complex SuperClass operand $superClassType")
-        }
     }
 
 
@@ -152,12 +136,39 @@ class Parser(var ont_path: String) {
                 dst_type match {
                     case "Class" => {
                         val dst = dst_class.asInstanceOf[OWLClass]
-                        new Edge(go_class, rel, dst)
+                        new Edge(go_class, "projects_" + rel, dst)
                         }
                     case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(Intersection) $dst_type")
                 }
             } 
             case _ =>  throw new Exception(s"Not parsing Intersection operand $exprType")
+        }
+
+    }
+
+    def parseUnion(go_class: OWLClass, injected_expr: OWLClassExpression, origin: String = "Union") = {
+        val exprType = injected_expr.getClassExpressionType.getName
+
+        exprType match {
+            case "Class" => {
+                val inj_class = injected_expr.asInstanceOf[OWLClass]
+                new Edge(inj_class, "injects", go_class)
+                }
+            case "ObjectSomeValuesFrom" => {
+                val proj_class = injected_expr.asInstanceOf[OWLObjectSomeValuesFrom]
+                
+                val(rel, src_class) = parseObjectSomeValuesFrom(proj_class, true) 
+
+                val src_type = src_class.getClassExpressionType.getName
+                src_type match {
+                    case "Class" => {
+                        val src = src_class.asInstanceOf[OWLClass]
+                        new Edge(src, "injects_" + rel, go_class)
+                        }
+                    case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(Intersection) $src_type")
+                }
+            } 
+            case _ =>  throw new Exception(s"Not parsing Union ($origin) operand $exprType")
         }
 
     }

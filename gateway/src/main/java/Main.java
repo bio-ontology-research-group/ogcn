@@ -23,6 +23,9 @@ public class Main {
 
     public static void main(String[] args) {
 
+	Parser p = new Parser("/home/zhapacfp/Github/ogcn/data/go-plus.owl");
+	p.parse();
+
 	Main main = new Main();
 	JCommander jcom = JCommander.newBuilder()
             .addObject(main)

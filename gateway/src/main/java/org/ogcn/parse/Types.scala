@@ -2,9 +2,12 @@ package org.ogcn.parse
 
 import org.semanticweb.owlapi.model._
 
+import uk.ac.manchester.cs.owl.owlapi.OWLClassImpl
 
 object Types {
 
+    val Top = new OWLClassImpl(IRI.create("http://www.w3.org/2002/07/owl#Thing")).asOWLClass
+    val Bottom = new OWLClassImpl(IRI.create("http://www.w3.org/2002/07/owl#Nothing")).asOWLClass
 
 
     type GOClass = String
@@ -26,4 +29,14 @@ object Types {
     }
 
     def goClassToStr(goClass: OWLClass) = goClass.toStringID.split("/").last.replace("_", ":")
+
+    def getNodes(edges: List[Edge]) = {
+        
+        val edges_sc = edges
+        val srcs = edges_sc.map((e) => e.src)
+        val dsts = edges_sc.map((e) => e.dst)
+
+        (srcs ::: dsts).toSet
+    }
+
 }

@@ -3,6 +3,9 @@ import os
 import pickle as pkl
 import logging
 
+import dgl
+
+logging.basicConfig(level=logging.DEBUG)
 
 #JPype imports
 import jpype
@@ -17,35 +20,48 @@ if not jpype.isJVMStarted():
         convertStrings=False)
 
 from org.ogcn.parse import Parser
+from org.ogcn.parse import Types
 
 def main():
+    logging.info(f"Top: {Types.goClassToStr(Types.Top())}")
+    logging.info(f"Top: {Types.goClassToStr(Types.Bottom())}")
 
     parser = Parser("../data/go.owl")
 
     edges = parser.parse()
 
+    nodes = list({str(e.src()) for e in edges}.union({str(e.dst()) for e in edges}))
+
+    node_idx = {v: k for k, v in enumerate(nodes)}
+    logging.info(f"Top: {node_idx['owl#Thing']}")
+#    logging.info(f"Top: {node_idx['owl#Nothing']}")
+
     logging.info(f"Number of edges: {len(edges)}")
 
     logging.debug(f"First edge: {edges[0]}")
+    
     graph = {}
     for edge in edges:
-        go_class_1 = edge.src
-        rel = edge.rel
-        go_class_2 = edge.dst
+        go_class_1 = edge.src()
+        rel = str(edge.rel())
+        go_class_2 = edge.dst()
+        
         key = ("node", rel, "node")
         if not key in graph:
-            graph[key] = list()
+            graph[key] = set()
 
         node1 = node_idx[go_class_1]
         node2 = node_idx[go_class_2]
 
-        graph[key].append([node1, node2])
+        graph[key].add((node1, node2))
     
-    graph = {k: v for k, v in graph.items() if len(v) > 100}
-   
-    rels = {k: len(v) for k, v in graph.items()}
 
-    logging.info(f"Number of nodes: {len(go_classes)}")
+    graph = {k: list(v) for k, v in graph.items()}
+
+    rels = {k: len(v) for k, v in graph.items()}
+    print(graph['node', "injects", "node"])
+
+    logging.info(f"Number of nodes: {len(nodes)}")
     logging.info(f"Edges in the graph:\n{rels}")
 
     graph = dgl.heterograph(graph)
@@ -54,8 +70,7 @@ def main():
 
 
     logging.debug(f"Type of node_idx: {type(node_idx)}")
-    node_idx = {prettyFormat(v): k for k, v in enumerate(go_classes)}
-    
+   
     with open("../data/nodes_cat3.pkl", "wb") as pkl_file:
         pkl.dump(node_idx, pkl_file)
 
