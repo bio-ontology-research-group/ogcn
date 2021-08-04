@@ -10,9 +10,24 @@ object Types {
     val Bottom = new OWLClassImpl(IRI.create("http://www.w3.org/2002/07/owl#Nothing")).asOWLClass
 
 
+    
+
     type GOClass = String
     type Relation = String
 
+
+    sealed trait QuantifiedExpression {
+        def getProperty(): OWLObjectPropertyExpression
+        def getFiller(): OWLClassExpression
+    }
+    case class Universal(val expression: OWLObjectAllValuesFrom) extends QuantifiedExpression{
+        def getProperty() = expression.getProperty
+        def getFiller() = expression.getFiller
+    }
+    case class Existential(val expression: OWLObjectSomeValuesFrom) extends QuantifiedExpression{
+        def getProperty() = expression.getProperty
+        def getFiller() = expression.getFiller
+    }
     sealed trait Expression
     case object GOClass extends Expression
     case class ObjectSomeValuesFrom(rel: Relation, expr: Expression) extends Expression

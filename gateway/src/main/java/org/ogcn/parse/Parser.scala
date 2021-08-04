@@ -91,7 +91,7 @@ class Parser(var ont_path: String) {
     def parseDisjointnessAxiom(go_class: OWLClass, rightSideExpr: OWLClassExpression) = {
         val exprType = rightSideExpr.getClassExpressionType().getName()
 
-        val left_proj = new Edge(Bottom, "projects", go_class)
+        val left_proj = projectionMorphism(Bottom, go_class)
 
         val right_proj = parseIntersection(Bottom, rightSideExpr, "Disjointness")
 
@@ -101,23 +101,21 @@ class Parser(var ont_path: String) {
     def parseSubClassAxiom(go_class: OWLClass, superClass: OWLClassExpression) = {
         val superClassType = superClass.getClassExpressionType.getName
 
-        val neg_sub = new Edge(s"Not_${goClassToStr(go_class)}", "negate", go_class)
+        val neg_sub = negationMorphism(go_class)
 
         val injection_sub = parseUnion(Top, go_class, "SubClass") // new Edge(go_class, "injects", "Top")
 
-        // val injections_super = superClassType match {
-        //     case "Class" => parseUnion(Top, superClass, "SubClass") :: Nil
+        val injections_super = superClassType match {
+            case "Class" => parseUnion(Top, superClass, "SubClass") :: Nil
 
-        //     case "ObjectComplementOf" => {
-        //         val superNNF = superClass.getNNF
+            case "ObjectComplementOf" => {
+                val superNNF = superClass.getNNF
 
-        //         parseUnion(Top, superNNF, "SubClass")
-        //     }
-        // }
+                parseUnion(Top, superNNF, "SubClass")
+            }
+        }
 
-        // val injection_super = 
-
-        neg_sub :: injection_sub :: Nil  //::: injections_super
+        neg_sub :: injection_sub ::: injections_super
 
     }
 
@@ -127,24 +125,18 @@ class Parser(var ont_path: String) {
         val exprType = projected_expr.getClassExpressionType.getName
 
         exprType match {
-            case "Class" => {
-                val proj_class = projected_expr.asInstanceOf[OWLClass]
-                new Edge(go_class, "projects", proj_class)
-                }
+            case "Class" => projectionMorphism(go_class, projected_expr)
             case "ObjectSomeValuesFrom" => {
                 val proj_class = projected_expr.asInstanceOf[OWLObjectSomeValuesFrom]
                 
-                val(rel, dst_class) = parseObjectSomeValuesFrom(proj_class) 
+                val(rel, dst_class) = parseQuantifiedExpression(Existential(proj_class)) 
 
                 val dst_type = dst_class.getClassExpressionType.getName
                 dst_type match {
-                    case "Class" => {
-                        val dst = dst_class.asInstanceOf[OWLClass]
-                        new Edge(go_class, "projects_" + rel, dst)
-                        }
+                    case "Class" => projectionMorphism(go_class, dst_class, Some(rel))
                     case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(Intersection) $dst_type")
                 }
-            } 
+            }    
             case _ =>  throw new Exception(s"Not parsing Intersection ($origin) operand $exprType")
         }
 
@@ -156,70 +148,66 @@ class Parser(var ont_path: String) {
         exprType match {
             case "Class" => {
                 val inj_class = injected_expr.asInstanceOf[OWLClass]
-                new Edge(inj_class, "injects", go_class)
-                }
+                injectionMorphism(inj_class, go_class) :: Nil
+            }
             case "ObjectSomeValuesFrom" => {
                 val inj_class = injected_expr.asInstanceOf[OWLObjectSomeValuesFrom]
                 
-                val(rel, src_class) = parseObjectSomeValuesFrom(inj_class, true) 
+                val(rel, src_class) = parseQuantifiedExpression(Existential(inj_class), true) 
 
                 val src_type = src_class.getClassExpressionType.getName
                 src_type match {
                     case "Class" => {
                         val src = src_class.asInstanceOf[OWLClass]
-                        new Edge(src, "injects_" + rel, go_class)
+                        injectionMorphism(src, go_class, Some(rel)) :: Nil
+                    }
+                    case "ObjectComplementOf" => {
+                        val src = src_class.asInstanceOf[OWLObjectComplementOf].getOperand
+                        
+                        src.getClassExpressionType.getName match{
+                            case "Class" => negationMorphism(src) :: injectionMorphism(src, go_class, Some(rel)) :: Nil
+                            case _ => throw new Exception(s"Not parsing Filler negation in ObjectSomeValuesFrom(Union) ${src.getClassExpressionType.getName}")
                         }
+                    }
                     case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(Union) $src_type")
                 }
-            } 
+            }
+         
             case "ObjectAllValuesFrom" => {
                 val inj_class = injected_expr.asInstanceOf[OWLObjectAllValuesFrom]
                 
-                val(rel, src_class) = parseObjectAllValuesFrom(inj_class, true) 
+                val(rel, src_class) = parseQuantifiedExpression(Universal(inj_class), true) 
 
                 val src_type = src_class.getClassExpressionType.getName
                 src_type match {
                     case "Class" => {
                         val src = src_class.asInstanceOf[OWLClass]
-                        new Edge(src, "injects_" + rel, go_class)
+                        injectionMorphism(src, go_class, Some(rel)) :: Nil
+                    }
+                    case "ObjectComplementOf" => {
+                        val src = src_class.asInstanceOf[OWLObjectComplementOf].getOperand
+                        
+                        src.getClassExpressionType.getName match{
+                            case "Class" => negationMorphism(src) :: injectionMorphism(src, go_class, Some(rel)) :: Nil
+                            case _ => throw new Exception(s"Not parsing Filler negation in ObjectAllValuesFrom(Union) ${src.getClassExpressionType.getName}")
                         }
+                    }
                     case _ =>  throw new Exception(s"Not parsing Filler in ObjectAllValuesFrom(Union) $src_type")
                 }
             }
-
+            
             case _ =>  throw new Exception(s"Not parsing Union ($origin) operand $exprType")
         }
 
     }
 
-    def parseObjectSomeValuesFrom(expr: OWLObjectSomeValuesFrom, inverse: Boolean = false) = {
+    def parseQuantifiedExpression(expr: QuantifiedExpression, inverse: Boolean = false) = {
         
         var relation = expr.getProperty.asInstanceOf[OWLObjectProperty]
 
         val rel = getRelationName(relation, inverse)
 
-        val dst_class = expr.getFiller()
-
-        if (inverse){
-            var inv_relation = relation.getInverseProperty
-            if (!inv_relation.isAnonymous){
-                (rel, dst_class)
-            }else{
-                ("inv_" + rel, dst_class)
-            }
-        }else{
-            (rel, dst_class)
-        }
-        
-    }
-
-     def parseObjectAllValuesFrom(expr: OWLObjectAllValuesFrom, inverse: Boolean = false) = {
-        
-        var relation = expr.getProperty.asInstanceOf[OWLObjectProperty]
-
-        val rel = getRelationName(relation, inverse)
-
-        val dst_class = expr.getFiller()
+        val dst_class = expr.getFiller
 
         if (inverse){
             var inv_relation = relation.getInverseProperty
@@ -256,5 +244,30 @@ class Parser(var ont_path: String) {
         }
 
         rel
+    }
+
+    ///////////////////////////////////////
+
+    def negationMorphism(go_class: OWLClassExpression) = {
+        val go_class_OWLClass = go_class.asInstanceOf[OWLClass]
+        new Edge(s"Not_${goClassToStr(go_class_OWLClass)}", "negate", go_class_OWLClass)
+    }
+
+    def injectionMorphism(src: OWLClassExpression, dst: OWLClassExpression, rel: Option[String] = None) = {
+        val src_OWLClass = src.asInstanceOf[OWLClass]
+        val dst_OWLClass = dst.asInstanceOf[OWLClass]
+        rel match {
+            case Some(r) => new Edge(src_OWLClass, "injects_" + r, dst_OWLClass)
+            case None => new Edge(src_OWLClass, "injects", dst_OWLClass)
+        }
+    }
+
+    def projectionMorphism(src: OWLClassExpression, dst: OWLClassExpression, rel: Option[String] = None) = {
+        val src_OWLClass = src.asInstanceOf[OWLClass]
+        val dst_OWLClass = dst.asInstanceOf[OWLClass]
+        rel match {
+            case Some(r) => new Edge(src_OWLClass, "projects_" + r, dst_OWLClass)
+            case None => new Edge(src_OWLClass, "projects", dst_OWLClass)
+        }
     }
 }
