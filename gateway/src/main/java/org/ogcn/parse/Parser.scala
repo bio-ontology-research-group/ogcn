@@ -59,7 +59,7 @@ class Parser(var ont_path: String) {
         axiomType match {
             case "EquivalentClasses" => {
                 var ax = axiom.asInstanceOf[OWLEquivalentClassesAxiom].getClassExpressionsAsList.asScala.toList
-                ax.tail.flatMap(parseEquivClass(go_class, _: OWLClassExpression))
+                ax.tail.flatMap(parseEquivClassAxiom(go_class, _: OWLClassExpression))
             }
             case "SubClassOf" => {
                 var ax = axiom.asInstanceOf[OWLSubClassOfAxiom]
@@ -75,7 +75,7 @@ class Parser(var ont_path: String) {
 
 
     /////////////////////////////////////////////
-    def parseEquivClass(go_class: OWLClass, rightSideExpr: OWLClassExpression) = {
+    def parseEquivClassAxiom(go_class: OWLClass, rightSideExpr: OWLClassExpression) = {
         val exprType = rightSideExpr.getClassExpressionType().getName()
 
         exprType match {
@@ -91,17 +91,11 @@ class Parser(var ont_path: String) {
     def parseDisjointnessAxiom(go_class: OWLClass, rightSideExpr: OWLClassExpression) = {
         val exprType = rightSideExpr.getClassExpressionType().getName()
 
-        val left_proj = new Edge("Bottom", "projects", go_class)
+        val left_proj = new Edge(Bottom, "projects", go_class)
 
-        exprType match {
-            case "Class" => {
-                val expr = rightSideExpr.asInstanceOf[OWLClass]
-                val right_proj = new Edge("Bottom", "projects", expr)
-                
-                left_proj :: right_proj :: Nil
-            }
-            case _ => throw new Exception(s"Not parsing Disjointness rigth side $exprType")
-        }
+        val right_proj = parseIntersection(Bottom, rightSideExpr, "Disjointness")
+
+        left_proj :: right_proj :: Nil
     }
 
     def parseSubClassAxiom(go_class: OWLClass, superClass: OWLClassExpression) = {
@@ -111,15 +105,25 @@ class Parser(var ont_path: String) {
 
         val injection_sub = parseUnion(Top, go_class, "SubClass") // new Edge(go_class, "injects", "Top")
 
-        val injection_super = parseUnion(Top, superClass, "SubClass")
+        // val injections_super = superClassType match {
+        //     case "Class" => parseUnion(Top, superClass, "SubClass") :: Nil
 
-        neg_sub :: injection_sub :: injection_super :: Nil
+        //     case "ObjectComplementOf" => {
+        //         val superNNF = superClass.getNNF
+
+        //         parseUnion(Top, superNNF, "SubClass")
+        //     }
+        // }
+
+        // val injection_super = 
+
+        neg_sub :: injection_sub :: Nil  //::: injections_super
 
     }
 
 
     /////////////////////////////////////////////
-    def parseIntersection(go_class: OWLClass, projected_expr: OWLClassExpression) = {
+    def parseIntersection(go_class: OWLClass, projected_expr: OWLClassExpression, origin: String = "Equiv") = {
         val exprType = projected_expr.getClassExpressionType.getName
 
         exprType match {
@@ -141,7 +145,7 @@ class Parser(var ont_path: String) {
                     case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(Intersection) $dst_type")
                 }
             } 
-            case _ =>  throw new Exception(s"Not parsing Intersection operand $exprType")
+            case _ =>  throw new Exception(s"Not parsing Intersection ($origin) operand $exprType")
         }
 
     }
@@ -155,9 +159,9 @@ class Parser(var ont_path: String) {
                 new Edge(inj_class, "injects", go_class)
                 }
             case "ObjectSomeValuesFrom" => {
-                val proj_class = injected_expr.asInstanceOf[OWLObjectSomeValuesFrom]
+                val inj_class = injected_expr.asInstanceOf[OWLObjectSomeValuesFrom]
                 
-                val(rel, src_class) = parseObjectSomeValuesFrom(proj_class, true) 
+                val(rel, src_class) = parseObjectSomeValuesFrom(inj_class, true) 
 
                 val src_type = src_class.getClassExpressionType.getName
                 src_type match {
@@ -165,9 +169,24 @@ class Parser(var ont_path: String) {
                         val src = src_class.asInstanceOf[OWLClass]
                         new Edge(src, "injects_" + rel, go_class)
                         }
-                    case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(Intersection) $src_type")
+                    case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(Union) $src_type")
                 }
             } 
+            case "ObjectAllValuesFrom" => {
+                val inj_class = injected_expr.asInstanceOf[OWLObjectAllValuesFrom]
+                
+                val(rel, src_class) = parseObjectAllValuesFrom(inj_class, true) 
+
+                val src_type = src_class.getClassExpressionType.getName
+                src_type match {
+                    case "Class" => {
+                        val src = src_class.asInstanceOf[OWLClass]
+                        new Edge(src, "injects_" + rel, go_class)
+                        }
+                    case _ =>  throw new Exception(s"Not parsing Filler in ObjectAllValuesFrom(Union) $src_type")
+                }
+            }
+
             case _ =>  throw new Exception(s"Not parsing Union ($origin) operand $exprType")
         }
 
@@ -177,26 +196,9 @@ class Parser(var ont_path: String) {
         
         var relation = expr.getProperty.asInstanceOf[OWLObjectProperty]
 
-        if (inverse) {
-            var inv_relation = relation.getInverseProperty
-            if (!inv_relation.isAnonymous){
-                relation = relation.asOWLObjectProperty
-            }
-        }
+        val rel = getRelationName(relation, inverse)
 
-
-        val rel_annots = ontology.getAnnotationAssertionAxioms(relation.getIRI()).asScala.toList
-
-        val rel = rel_annots find (x => x.getProperty() == data_factory.getRDFSLabel()) match {
-            case Some(r) => r.getValue().toString.replace("\"", "").replace(" ", "_")
-            case None => {
-                rel_counter = rel_counter + 1
-                "rel" + (rel_counter)
-            }
-        }
         val dst_class = expr.getFiller()
-
-        val dst_type = dst_class.getClassExpressionType.getName
 
         if (inverse){
             var inv_relation = relation.getInverseProperty
@@ -209,5 +211,50 @@ class Parser(var ont_path: String) {
             (rel, dst_class)
         }
         
+    }
+
+     def parseObjectAllValuesFrom(expr: OWLObjectAllValuesFrom, inverse: Boolean = false) = {
+        
+        var relation = expr.getProperty.asInstanceOf[OWLObjectProperty]
+
+        val rel = getRelationName(relation, inverse)
+
+        val dst_class = expr.getFiller()
+
+        if (inverse){
+            var inv_relation = relation.getInverseProperty
+            if (!inv_relation.isAnonymous){
+                (rel, dst_class)
+            }else{
+                ("inv_" + rel, dst_class)
+            }
+        }else{
+            (rel, dst_class)
+        }
+        
+    }
+
+    def getRelationName(relation: OWLObjectProperty, inverse: Boolean = false) = {
+        
+        var relat = relation 
+        if (inverse) {
+            val inv_relation = relation.getInverseProperty
+            if (!inv_relation.isAnonymous){
+                relat = inv_relation.asOWLObjectProperty
+            }
+            
+        }
+
+        val rel_annots = ontology.getAnnotationAssertionAxioms(relat.getIRI()).asScala.toList
+
+        val rel = rel_annots find (x => x.getProperty() == data_factory.getRDFSLabel()) match {
+            case Some(r) => r.getValue().toString.replace("\"", "").replace(" ", "_")
+            case None => {
+                rel_counter = rel_counter + 1
+                "rel" + (rel_counter)
+            }
+        }
+
+        rel
     }
 }

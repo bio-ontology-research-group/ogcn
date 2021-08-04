@@ -59,9 +59,9 @@ def main():
     graph = {k: list(v) for k, v in graph.items()}
 
     rels = {k: len(v) for k, v in graph.items()}
-    print(graph['node', "injects", "node"])
 
     logging.info(f"Number of nodes: {len(nodes)}")
+    logging.info(f"Number of rels: {len(rels)}")
     logging.info(f"Edges in the graph:\n{rels}")
 
     graph = dgl.heterograph(graph)
