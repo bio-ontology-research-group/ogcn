@@ -106,7 +106,7 @@ def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_ep
 
 if __name__ == "__main__":
     # You can change the number of GPUs per trial here:
-    num_samples = 200
+    num_samples = 50
     max_num_epochs = 10
     gpus_per_trial = 1
 

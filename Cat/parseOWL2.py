@@ -32,9 +32,12 @@ def main():
 
     nodes = list({str(e.src()) for e in edges}.union({str(e.dst()) for e in edges}))
 
+    print(nodes)
+
+
     node_idx = {v: k for k, v in enumerate(nodes)}
     logging.info(f"Top: {node_idx['owl#Thing']}")
-#    logging.info(f"Top: {node_idx['owl#Nothing']}")
+    logging.info(f"Top: {node_idx['owl#Nothing']}")
 
     logging.info(f"Number of edges: {len(edges)}")
 

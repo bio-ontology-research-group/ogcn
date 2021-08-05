@@ -105,9 +105,9 @@ class Parser(var ont_path: String) {
 
         val injection_sub = parseUnion(Top, go_class, "SubClass") // new Edge(go_class, "injects", "Top")
 
-        val injections_super = parseUnion(Top, superClass, "SubClass") :: Nil
+        val injections_super = parseUnion(Top, superClass, "SubClass")
 
-        neg_sub :: Nil //injection_sub ::: injections_super
+        neg_sub :: injection_sub ::: injections_super
 
     }
 
@@ -171,14 +171,6 @@ class Parser(var ont_path: String) {
                         val src = src_class.asInstanceOf[OWLClass]
                         injectionMorphism(src, go_class, Some(rel)) :: Nil
                     }
-                    case "ObjectComplementOf" => {
-                        val src = src_class.asInstanceOf[OWLObjectComplementOf].getOperand
-                        
-                        src.getClassExpressionType.getName match{
-                            case "Class" => negationMorphism(src) :: injectionMorphism(src, go_class, Some(rel)) :: Nil
-                            case _ => throw new Exception(s"Not parsing Filler negation in ObjectSomeValuesFrom(Union) ${src.getClassExpressionType.getName}")
-                        }
-                    }
                     case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(Union) $src_type")
                 }
             }
@@ -193,14 +185,6 @@ class Parser(var ont_path: String) {
                     case "Class" => {
                         val src = src_class.asInstanceOf[OWLClass]
                         injectionMorphism(src, go_class, Some(rel)) :: Nil
-                    }
-                    case "ObjectComplementOf" => {
-                        val src = src_class.asInstanceOf[OWLObjectComplementOf].getOperand
-                        
-                        src.getClassExpressionType.getName match{
-                            case "Class" => negationMorphism(src) :: injectionMorphism(src, go_class, Some(rel)) :: Nil
-                            case _ => throw new Exception(s"Not parsing Filler negation in ObjectAllValuesFrom(Union) ${src.getClassExpressionType.getName}")
-                        }
                     }
                     case _ =>  throw new Exception(s"Not parsing Filler in ObjectAllValuesFrom(Union) $src_type")
                 }

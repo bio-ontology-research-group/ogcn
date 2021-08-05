@@ -341,12 +341,12 @@ def load_graph_data(data_file):
 
     # g = go.toDGLGraph()
     
-    graphs, data_dict = dgl.load_graphs(curr_path + '/data/go_cat.bin')
+    graphs, data_dict = dgl.load_graphs(curr_path + '/data/go_cat3.bin')
     g = graphs[0]
 
     num_nodes = g.number_of_nodes()
     
-    with open(curr_path + "/data/nodes_cat.pkl", "rb") as pkl_file:
+    with open(curr_path + "/data/nodes_cat3.pkl", "rb") as pkl_file:
         node_idx = pkl.load(pkl_file)
     g = dgl.add_self_loop(g, 'id')
     
