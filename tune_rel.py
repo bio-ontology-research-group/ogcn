@@ -40,7 +40,7 @@ def train_tune(config, data_file=None, train_inter_file=None, test_inter_file=No
 
 
     epochs = 2
-    train(n_hid, dropout, lr, batch_size, epochs, data_file, train_inter_file, test_inter_file)
+    train(n_hid, dropout, lr, batch_size, epochs, data_file, train_inter_file, test_inter_file, tuning = True)
 
 
 def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_epochs, gpus_per_trial):
