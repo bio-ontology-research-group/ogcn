@@ -23,7 +23,7 @@ public class Main {
 
     public static void main(String[] args) {
 
-	Parser p = new Parser("/home/zhapacfp/Github/ogcn/data/go-plus.owl");
+	Parser p = new Parser("/home/zhapacfp/Github/ogcn/data/go.owl");
 	p.parse();
 
 	Main main = new Main();

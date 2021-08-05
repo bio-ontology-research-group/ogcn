@@ -98,24 +98,16 @@ class Parser(var ont_path: String) {
         left_proj :: right_proj :: Nil
     }
 
-    def parseSubClassAxiom(go_class: OWLClass, superClass: OWLClassExpression) = {
+    def parseSubClassAxiom(go_class: OWLClass, superClass: OWLClassExpression): List[Edge] = {
         val superClassType = superClass.getClassExpressionType.getName
 
         val neg_sub = negationMorphism(go_class)
 
         val injection_sub = parseUnion(Top, go_class, "SubClass") // new Edge(go_class, "injects", "Top")
 
-        val injections_super = superClassType match {
-            case "Class" => parseUnion(Top, superClass, "SubClass") :: Nil
+        val injections_super = parseUnion(Top, superClass, "SubClass") :: Nil
 
-            case "ObjectComplementOf" => {
-                val superNNF = superClass.getNNF
-
-                parseUnion(Top, superNNF, "SubClass")
-            }
-        }
-
-        neg_sub :: injection_sub ::: injections_super
+        neg_sub :: Nil //injection_sub ::: injections_super
 
     }
 
@@ -142,7 +134,7 @@ class Parser(var ont_path: String) {
 
     }
 
-    def parseUnion(go_class: OWLClass, injected_expr: OWLClassExpression, origin: String = "Union") = {
+    def parseUnion(go_class: OWLClass, injected_expr: OWLClassExpression, origin: String = "Union"): List[Edge] = {
         val exprType = injected_expr.getClassExpressionType.getName
 
         exprType match {
@@ -150,6 +142,24 @@ class Parser(var ont_path: String) {
                 val inj_class = injected_expr.asInstanceOf[OWLClass]
                 injectionMorphism(inj_class, go_class) :: Nil
             }
+
+            case "ObjectComplementOf" => {
+                val operand = injected_expr.asInstanceOf[OWLObjectComplementOf].getOperand
+                val operandType = operand.getClassExpressionType.getName
+
+                operandType match {
+                    case "Class" => {
+                        val neg = negationMorphism(operand)
+                        val injection = parseUnion(go_class, operand, "SubClass")
+                        neg :: injection
+                    }
+                    case _ => {
+                        val injected_NNF = injected_expr.getNNF
+                        parseUnion(go_class, injected_NNF)
+                    }
+                }
+            }
+
             case "ObjectSomeValuesFrom" => {
                 val inj_class = injected_expr.asInstanceOf[OWLObjectSomeValuesFrom]
                 
