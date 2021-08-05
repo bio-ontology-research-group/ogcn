@@ -103,9 +103,9 @@ class Parser(var ont_path: String) {
 
         val neg_sub = negationMorphism(go_class)
 
-        val injection_sub = parseUnion(Top, go_class, "SubClass") // new Edge(go_class, "injects", "Top")
+        val injection_sub = parseUnion(Top, go_class, origin="SubClass") // new Edge(go_class, "injects", "Top")
 
-        val injections_super = parseUnion(Top, superClass, "SubClass")
+        val injections_super = parseUnion(Top, superClass, origin="SubClass")
 
         neg_sub :: injection_sub ::: injections_super
 
@@ -126,7 +126,7 @@ class Parser(var ont_path: String) {
                 val dst_type = dst_class.getClassExpressionType.getName
                 dst_type match {
                     case "Class" => projectionMorphism(go_class, dst_class, Some(rel))
-                    case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(Intersection) $dst_type")
+                    case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(Intersection) $dst_type\n$go_class\n$projected_expr")
                 }
             }    
             case _ =>  throw new Exception(s"Not parsing Intersection ($origin) operand $exprType")
@@ -134,13 +134,13 @@ class Parser(var ont_path: String) {
 
     }
 
-    def parseUnion(go_class: OWLClass, injected_expr: OWLClassExpression, origin: String = "Union"): List[Edge] = {
+    def parseUnion(go_class: OWLClass, injected_expr: OWLClassExpression, prevRel: Option[String] = None, origin: String = "Union"): List[Edge] = {
         val exprType = injected_expr.getClassExpressionType.getName
 
         exprType match {
             case "Class" => {
                 val inj_class = injected_expr.asInstanceOf[OWLClass]
-                injectionMorphism(inj_class, go_class) :: Nil
+                injectionMorphism(inj_class, go_class, prevRel) :: Nil
             }
 
             case "ObjectComplementOf" => {
@@ -150,12 +150,12 @@ class Parser(var ont_path: String) {
                 operandType match {
                     case "Class" => {
                         val neg = negationMorphism(operand)
-                        val injection = parseUnion(go_class, operand, "SubClass")
+                        val injection = parseUnion(go_class, operand, prevRel,"rec union OC")
                         neg :: injection
                     }
                     case _ => {
                         val injected_NNF = injected_expr.getNNF
-                        parseUnion(go_class, injected_NNF)
+                        parseUnion(go_class, injected_NNF, prevRel)
                     }
                 }
             }
@@ -166,12 +166,12 @@ class Parser(var ont_path: String) {
                 val(rel, src_class) = parseQuantifiedExpression(Existential(inj_class), true) 
 
                 val src_type = src_class.getClassExpressionType.getName
-                src_type match {
-                    case "Class" => {
-                        val src = src_class.asInstanceOf[OWLClass]
-                        injectionMorphism(src, go_class, Some(rel)) :: Nil
-                    }
-                    case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(Union) $src_type")
+
+                prevRel match {
+                    case None => parseUnion(go_class, src_class, Some(rel), "rec union OSV") // simple case
+
+                    case _ => throw new Exception(s"Complex structure in ObjectSomeValuesFrom $src_type")
+
                 }
             }
          
@@ -181,14 +181,13 @@ class Parser(var ont_path: String) {
                 val(rel, src_class) = parseQuantifiedExpression(Universal(inj_class), true) 
 
                 val src_type = src_class.getClassExpressionType.getName
-                src_type match {
-                    case "Class" => {
-                        val src = src_class.asInstanceOf[OWLClass]
-                        injectionMorphism(src, go_class, Some(rel)) :: Nil
-                    }
-                    case _ =>  throw new Exception(s"Not parsing Filler in ObjectAllValuesFrom(Union) $src_type")
-                }
-            }
+                
+                prevRel match {
+                    case None => parseUnion(go_class, src_class, Some(rel), "rec union OAV") // simple case
+
+                    case _ => throw new Exception(s"Complex structure in ObjectAllValuesFrom $src_type")
+
+                }            }
             
             case _ =>  throw new Exception(s"Not parsing Union ($origin) operand $exprType")
         }
