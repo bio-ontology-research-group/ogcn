@@ -14,25 +14,28 @@ public class Main {
 
 
     public Main() {
-	logger = LoggerFactory.getLogger(Main.class);
+		logger = LoggerFactory.getLogger(Main.class);
     }
 
     public void run() throws Exception{
-	logger.info("Run function is excecuted");
+		logger.info("Run function is excecuted");
     }
 
     public static void main(String[] args) {
 
-	Main main = new Main();
-	JCommander jcom = JCommander.newBuilder()
-            .addObject(main)
-            .build();
-	try {
-	    jcom.parse(args);
-	    main.run();
-	} catch (Exception e) {
-	    e.printStackTrace();
-	    jcom.usage();
-	}
+		Parser p = new Parser("/home/zhapacfp/Github/ogcn/data/go-plus.owl");
+		p.parse();
+
+		Main main = new Main();
+		JCommander jcom = JCommander.newBuilder()
+				.addObject(main)
+				.build();
+		try {
+			jcom.parse(args);
+			main.run();
+		} catch (Exception e) {
+			e.printStackTrace();
+			jcom.usage();
+		}
     }
 }

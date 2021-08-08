@@ -59,7 +59,7 @@ class Parser(var ont_path: String) {
         axiomType match {
             case "EquivalentClasses" => {
                 var ax = axiom.asInstanceOf[OWLEquivalentClassesAxiom].getClassExpressionsAsList.asScala.toList
-                ax.tail.flatMap(parseEquivClassAxiom(go_class, _: OWLClassExpression))
+                ax.filter(_ != go_class).flatMap(parseEquivClassAxiom(go_class, _: OWLClassExpression))
             }
             case "SubClassOf" => {
                 var ax = axiom.asInstanceOf[OWLSubClassOfAxiom]
@@ -67,7 +67,7 @@ class Parser(var ont_path: String) {
             }
             case "DisjointClasses" => {
                 var ax = axiom.asInstanceOf[OWLDisjointClassesAxiom].getClassExpressionsAsList.asScala.toList
-                ax.tail.flatMap(parseDisjointnessAxiom(go_class, _: OWLClassExpression))
+                ax.filter(_ != go_class).flatMap(parseDisjointnessAxiom(go_class, _: OWLClassExpression))
             }
             case _ =>  throw new Exception(s"Not parsing axiom $axiomType")
         }
@@ -81,8 +81,14 @@ class Parser(var ont_path: String) {
         exprType match {
             case "ObjectIntersectionOf" =>  {
                 var expr = rightSideExpr.asInstanceOf[OWLObjectIntersectionOf].getOperands.asScala.toList
+
+                
                 expr.map(parseIntersection(go_class, _: OWLClassExpression))
                 }
+            case "ObjectUnionOf" => {
+                var expr = rightSideExpr.asInstanceOf[OWLObjectUnionOf].getOperands.asScala.toList
+                expr.flatMap(parseUnion(go_class, _: OWLClassExpression))
+            }
             case _ =>  throw new Exception(s"Not parsing EquivalentClass rigth side $exprType")
         }
 
@@ -93,19 +99,19 @@ class Parser(var ont_path: String) {
 
         val left_proj = projectionMorphism(Bottom, go_class)
 
-        val right_proj = parseIntersection(Bottom, rightSideExpr, "Disjointness")
+        val right_proj = parseIntersection(Bottom, rightSideExpr, None, origin = "Disjointness")
 
         left_proj :: right_proj :: Nil
     }
 
     def parseSubClassAxiom(go_class: OWLClass, superClass: OWLClassExpression): List[Edge] = {
-        val superClassType = superClass.getClassExpressionType.getName
 
+        // println(s"$go_class\n$superClass")
         val neg_sub = negationMorphism(go_class)
 
-        val injection_sub = parseUnion(Top, go_class, "SubClass") // new Edge(go_class, "injects", "Top")
+        val injection_sub = parseUnion(Top, go_class, origin="SubClass") // new Edge(go_class, "injects", "Top")
 
-        val injections_super = parseUnion(Top, superClass, "SubClass")
+        val injections_super = parseUnion(Top, superClass, origin="SubClass")
 
         neg_sub :: injection_sub ::: injections_super
 
@@ -113,7 +119,7 @@ class Parser(var ont_path: String) {
 
 
     /////////////////////////////////////////////
-    def parseIntersection(go_class: OWLClass, projected_expr: OWLClassExpression, origin: String = "Equiv") = {
+    def parseIntersection(go_class: OWLClass, projected_expr: OWLClassExpression, prevRel: Option[String] = None, origin: String = "Equiv") : Edge = {
         val exprType = projected_expr.getClassExpressionType.getName
 
         exprType match {
@@ -126,7 +132,13 @@ class Parser(var ont_path: String) {
                 val dst_type = dst_class.getClassExpressionType.getName
                 dst_type match {
                     case "Class" => projectionMorphism(go_class, dst_class, Some(rel))
-                    case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(Intersection) $dst_type")
+                    case "ObjectSomeValuesFrom" => {
+                        prevRel match {
+                            case None => parseIntersection(go_class, dst_class, Some(rel))
+                            case Some(r) => parseIntersection(go_class, dst_class, Some(r+"_"+rel))
+                        }
+                    }
+                    case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(Intersection) $dst_type\n$go_class\n$projected_expr")
                 }
             }    
             case _ =>  throw new Exception(s"Not parsing Intersection ($origin) operand $exprType")
@@ -134,14 +146,11 @@ class Parser(var ont_path: String) {
 
     }
 
-    def parseUnion(go_class: OWLClass, injected_expr: OWLClassExpression, origin: String = "Union"): List[Edge] = {
+    def parseUnion(go_class: OWLClass, injected_expr: OWLClassExpression, prevRel: Option[String] = None, origin: String = "Union"): List[Edge] = {
         val exprType = injected_expr.getClassExpressionType.getName
 
         exprType match {
-            case "Class" => {
-                val inj_class = injected_expr.asInstanceOf[OWLClass]
-                injectionMorphism(inj_class, go_class) :: Nil
-            }
+            case "Class" => injectionMorphism(injected_expr, go_class, prevRel) :: Nil
 
             case "ObjectComplementOf" => {
                 val operand = injected_expr.asInstanceOf[OWLObjectComplementOf].getOperand
@@ -150,12 +159,12 @@ class Parser(var ont_path: String) {
                 operandType match {
                     case "Class" => {
                         val neg = negationMorphism(operand)
-                        val injection = parseUnion(go_class, operand, "SubClass")
+                        val injection = parseUnion(go_class, operand, prevRel,"rec union OC")
                         neg :: injection
                     }
                     case _ => {
                         val injected_NNF = injected_expr.getNNF
-                        parseUnion(go_class, injected_NNF)
+                        parseUnion(go_class, injected_NNF, prevRel)
                     }
                 }
             }
@@ -166,12 +175,14 @@ class Parser(var ont_path: String) {
                 val(rel, src_class) = parseQuantifiedExpression(Existential(inj_class), true) 
 
                 val src_type = src_class.getClassExpressionType.getName
-                src_type match {
-                    case "Class" => {
-                        val src = src_class.asInstanceOf[OWLClass]
-                        injectionMorphism(src, go_class, Some(rel)) :: Nil
-                    }
-                    case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(Union) $src_type")
+
+                prevRel match {
+                    case None => parseUnion(go_class, src_class, Some(rel), "rec union OSV") // simple case
+
+                    case Some(r) => parseUnion(go_class, src_class, Some(r + "_" + rel))
+
+                    case _ => throw new Exception(s"Complex structure in ObjectSomeValuesFrom $src_type\n$origin\n$go_class\n$injected_expr")
+
                 }
             }
          
@@ -181,16 +192,42 @@ class Parser(var ont_path: String) {
                 val(rel, src_class) = parseQuantifiedExpression(Universal(inj_class), true) 
 
                 val src_type = src_class.getClassExpressionType.getName
-                src_type match {
-                    case "Class" => {
-                        val src = src_class.asInstanceOf[OWLClass]
-                        injectionMorphism(src, go_class, Some(rel)) :: Nil
-                    }
-                    case _ =>  throw new Exception(s"Not parsing Filler in ObjectAllValuesFrom(Union) $src_type")
+                
+                prevRel match {
+                    case None => parseUnion(go_class, src_class, Some(rel), "rec union OAV") // simple case
+
+                    case _ => throw new Exception(s"Complex structure in ObjectAllValuesFrom $src_type")
+
                 }
             }
+
+            case "ObjectMinCardinality" => {
+                val inj_class = injected_expr.asInstanceOf[OWLObjectMinCardinality]
+                
+                val(rel, src_class) = parseQuantifiedExpression(MinCardinality(inj_class), true) 
+
+                val src_type = src_class.getClassExpressionType.getName
+                
+                prevRel match {
+                    case None => parseUnion(go_class, src_class, Some(rel), "rec union OMC") // simple case
+
+                    case _ => throw new Exception(s"Complex structure in ObjectMinCardinality $src_type")
+
+                }
+            }
+
             
-            case _ =>  throw new Exception(s"Not parsing Union ($origin) operand $exprType")
+            // case "ObjectIntersectionOf" => {
+            //     val inj_class = injected_expr.asInstanceOf[OWLObjectIntersectionOf]
+            //     val exactCardinality = checkExactCardinality(inj_class)
+                
+            //     exactCardinality match {
+            //         case None => throw new Exception(s"Not parsed complex intersection in union: $origin")
+            //         case Some(expr) => parseUnion(go_class, expr, prevRel, "exactCardinality")
+            //     }
+            // }
+
+            case _ =>  throw new Exception(s"Not parsing Union ($origin) operand $exprType\n$go_class")
         }
 
     }
@@ -238,6 +275,11 @@ class Parser(var ont_path: String) {
         }
 
         rel
+    }
+
+    def checkExactCardinality(expr: OWLObjectIntersectionOf) = {
+        val operands = expr.getOperands
+        None
     }
 
     ///////////////////////////////////////
