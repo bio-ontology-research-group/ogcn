@@ -75,7 +75,7 @@ def load_data(train_inter_file, test_inter_file):
 
     return train_df, val_df, test_df
 
-def train(n_hid, dropout, lr, batch_size, epochs, data_file, train_inter_file, test_inter_file, checkpoint_dir = None, tuning= False):
+def train(n_hid, dropout, lr, num_bases, batch_size, epochs, data_file, train_inter_file, test_inter_file, checkpoint_dir = None, tuning= False):
 
     g, annots, prot_idx = load_graph_data(data_file)
     
@@ -86,7 +86,6 @@ def train(n_hid, dropout, lr, batch_size, epochs, data_file, train_inter_file, t
 
     g = dgl.to_homogeneous(g)
 
-    num_bases = 7
     feat_dim = 2
     loss_func = nn.BCELoss()
 

@@ -37,18 +37,19 @@ def train_tune(config, data_file=None, train_inter_file=None, test_inter_file=No
     n_hid = config["n_hid"]
     dropout = config["dropout"]
     lr = config["lr"]
+    num_bases = config["num_bases"]
 
 
-    epochs = 2
-    train(n_hid, dropout, lr, batch_size, epochs, data_file, train_inter_file, test_inter_file, tuning = True)
+    epochs = 32
+    train(n_hid, dropout, lr, num_bases, batch_size, epochs, data_file, train_inter_file, test_inter_file, tuning = True)
 
 
 def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_epochs, gpus_per_trial):
 
     feat_dim = 2
-    num_bases = 7
-    num_rels = 7
-    num_nodes = 50653
+    num_bases = 15
+    num_rels = 19
+    num_nodes = 87833
     
     load_data(train_inter_file, test_inter_file)
     
@@ -56,7 +57,8 @@ def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_ep
         "n_hid": tune.choice([1, 2, 3]),
         "dropout": tune.choice([x/10 for x in range(1,9)]),
         "lr": tune.loguniform(1e-4, 1e-1),
-        "batch_size": tune.choice([8, 16, 32])
+        "batch_size": tune.choice([8, 16, 32]),
+        "num_bases": tune.choice([5,10,15,19])
     }
     scheduler = ASHAScheduler(
         metric="auc",
