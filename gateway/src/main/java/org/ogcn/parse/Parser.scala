@@ -59,8 +59,7 @@ class Parser(var ont_path: String) {
         axiomType match {
             case "EquivalentClasses" => {
                 var ax = axiom.asInstanceOf[OWLEquivalentClassesAxiom].getClassExpressionsAsList.asScala.toList
-
-                ax.tail.flatMap(parseEquivClassAxiom(go_class, _: OWLClassExpression))
+                ax.filter(_ != go_class).flatMap(parseEquivClassAxiom(go_class, _: OWLClassExpression))
             }
             case "SubClassOf" => {
                 var ax = axiom.asInstanceOf[OWLSubClassOfAxiom]
@@ -68,9 +67,7 @@ class Parser(var ont_path: String) {
             }
             case "DisjointClasses" => {
                 var ax = axiom.asInstanceOf[OWLDisjointClassesAxiom].getClassExpressionsAsList.asScala.toList
-                println(s"$go_class\n\n$ax\n\n\n\n\n")
-
-                ax.tail.flatMap(parseDisjointnessAxiom(go_class, _: OWLClassExpression))
+                ax.filter(_ != go_class).flatMap(parseDisjointnessAxiom(go_class, _: OWLClassExpression))
             }
             case _ =>  throw new Exception(s"Not parsing axiom $axiomType")
         }
