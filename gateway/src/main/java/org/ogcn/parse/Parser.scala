@@ -4,7 +4,7 @@ package org.ogcn.parse
 import org.semanticweb.owlapi.model._
 import org.semanticweb.owlapi.apibinding.OWLManager
 import org.semanticweb.owlapi.model.parameters.Imports
-
+import uk.ac.manchester.cs.owl.owlapi.OWLObjectSomeValuesFromImpl
 
 
 // Java imports
@@ -83,13 +83,16 @@ class Parser(var ont_path: String) {
                 var expr = rightSideExpr.asInstanceOf[OWLObjectIntersectionOf].getOperands.asScala.toList
 
                 
-                expr.map(parseIntersection(go_class, _: OWLClassExpression))
+                expr.flatMap(parseIntersection(go_class, _: OWLClassExpression))
                 }
             case "ObjectUnionOf" => {
                 var expr = rightSideExpr.asInstanceOf[OWLObjectUnionOf].getOperands.asScala.toList
                 expr.flatMap(parseUnion(go_class, _: OWLClassExpression))
             }
-            case _ =>  throw new Exception(s"Not parsing EquivalentClass rigth side $exprType")
+            case "Class" => {
+                List()
+            }
+            case _ =>  throw new Exception(s"Not parsing EquivalentClass rigth side $exprType\n$go_class\n$rightSideExpr")
         }
 
     }
@@ -101,12 +104,11 @@ class Parser(var ont_path: String) {
 
         val right_proj = parseIntersection(Bottom, rightSideExpr, None, origin = "Disjointness")
 
-        left_proj :: right_proj :: Nil
+        left_proj :: right_proj
     }
 
     def parseSubClassAxiom(go_class: OWLClass, superClass: OWLClassExpression): List[Edge] = {
 
-        // println(s"$go_class\n$superClass")
         val neg_sub = negationMorphism(go_class)
 
         val injection_sub = parseUnion(Top, go_class, origin="SubClass") // new Edge(go_class, "injects", "Top")
@@ -119,29 +121,91 @@ class Parser(var ont_path: String) {
 
 
     /////////////////////////////////////////////
-    def parseIntersection(go_class: OWLClass, projected_expr: OWLClassExpression, prevRel: Option[String] = None, origin: String = "Equiv") : Edge = {
+    def parseIntersection(go_class: OWLClass, projected_expr: OWLClassExpression, prevRel: Option[String] = None, origin: String = "Equiv") : List[Edge] = {
         val exprType = projected_expr.getClassExpressionType.getName
 
         exprType match {
-            case "Class" => projectionMorphism(go_class, projected_expr)
+            case "Class" => projectionMorphism(go_class, projected_expr, prevRel) :: Nil
+
+            case "ObjectComplementOf" => {
+                val operand = projected_expr.asInstanceOf[OWLObjectComplementOf].getOperand
+                val operandType = operand.getClassExpressionType.getName
+
+                operandType match {
+                    case "Class" => {
+                        val neg = negationMorphism(operand)
+                        val projection = parseIntersection(go_class, operand, prevRel,"rec intersection OC")
+                        neg :: projection
+                    }
+                    case _ => {
+                        val projected_NNF = projected_expr.getNNF
+                        parseIntersection(go_class, projected_NNF, prevRel)
+                    }
+                }
+            }
+
             case "ObjectSomeValuesFrom" => {
                 val proj_class = projected_expr.asInstanceOf[OWLObjectSomeValuesFrom]
                 
                 val(rel, dst_class) = parseQuantifiedExpression(Existential(proj_class)) 
 
-                val dst_type = dst_class.getClassExpressionType.getName
-                dst_type match {
-                    case "Class" => projectionMorphism(go_class, dst_class, Some(rel))
-                    case "ObjectSomeValuesFrom" => {
-                        prevRel match {
-                            case None => parseIntersection(go_class, dst_class, Some(rel))
-                            case Some(r) => parseIntersection(go_class, dst_class, Some(r+"_"+rel))
-                        }
-                    }
-                    case _ =>  throw new Exception(s"Not parsing Filler in ObjectSomeValuesFrom(Intersection) $dst_type\n$go_class\n$projected_expr")
+                prevRel match {
+                    case None => parseIntersection(go_class, dst_class, Some(rel), "rec intersection OSV") // simple case
+
+                    case Some(r) => parseIntersection(go_class, dst_class, Some(r + "_" + rel))
+
+                    case _ => throw new Exception(s"Complex structure in ObjectSomeValuesFrom $origin\n$go_class\n$projected_expr")
                 }
-            }    
-            case _ =>  throw new Exception(s"Not parsing Intersection ($origin) operand $exprType")
+            }
+
+
+            case "ObjectAllValuesFrom" => {
+                val proj_class = projected_expr.asInstanceOf[OWLObjectAllValuesFrom]
+                
+                val(rel, dst_class) = parseQuantifiedExpression(Universal(proj_class)) 
+
+                prevRel match {
+                    case None => parseIntersection(go_class, dst_class, Some(rel), "rec intersection OAV") // simple case
+
+                    // case Some(r) => parseIntersection(go_class, dst_class, Some(r + "_" + rel))
+
+                    case _ => throw new Exception(s"Complex structure in ObjectSomeValuesFrom $origin\n$go_class\n$projected_expr")
+                }
+            }
+
+
+            case "ObjectIntersectionOf" => {
+                val proj_class = projected_expr.asInstanceOf[OWLObjectIntersectionOf]
+                val exactCardinality = checkExactCardinality(proj_class)
+                
+                exactCardinality match {
+                    case None => {
+                        val proj_class = projected_expr.asInstanceOf[OWLObjectIntersectionOf].getOperands.asScala.toList
+
+                
+                       proj_class.flatMap(parseIntersection(go_class, _: OWLClassExpression, prevRel, "nested intersection"))
+                    }
+                    case Some(expr) => parseIntersection(go_class, expr, prevRel, "exactCardinality")
+                }
+            }
+
+            case "ObjectMinCardinality" => {
+                val proj_class = projected_expr.asInstanceOf[OWLObjectMinCardinality]
+                
+                val(rel, src_class) = parseQuantifiedExpression(MinCardinality(proj_class), true) 
+
+                val src_type = src_class.getClassExpressionType.getName
+                
+                prevRel match {
+                    case None => parseIntersection(go_class, src_class, Some(rel), "rec union OMC") // simple case
+
+                    case _ => throw new Exception(s"Complex structure in ObjectMinCardinality $src_type")
+
+                }
+            }
+
+
+            case _ =>  throw new Exception(s"Not parsing Intersection ($origin) operand $exprType\n$go_class\n$projected_expr")
         }
 
     }
@@ -216,16 +280,24 @@ class Parser(var ont_path: String) {
                 }
             }
 
-            
-            // case "ObjectIntersectionOf" => {
-            //     val inj_class = injected_expr.asInstanceOf[OWLObjectIntersectionOf]
-            //     val exactCardinality = checkExactCardinality(inj_class)
+            case "ObjectExactCardinality" => {
+                val inj_class = injected_expr.asInstanceOf[OWLObjectExactCardinality].asIntersectionOfMinMax
+                parseUnion(go_class, inj_class, prevRel, "Object exact cardinality")
+            }
+
+            case "ObjectIntersectionOf" => {
+                val inj_class = injected_expr.asInstanceOf[OWLObjectIntersectionOf]
+                val exactCardinality = checkExactCardinality(inj_class)
                 
-            //     exactCardinality match {
-            //         case None => throw new Exception(s"Not parsed complex intersection in union: $origin")
-            //         case Some(expr) => parseUnion(go_class, expr, prevRel, "exactCardinality")
-            //     }
-            // }
+                exactCardinality match {
+                    case None => {
+                        //throw new Exception(s"Not parsed complex intersection in union: $origin\n$go_class")
+                        println(s"PARSING WARNING: Not parsed complex intersection in union: $origin\n$go_class")
+                        List()
+                    }
+                    case Some(expr) => parseUnion(go_class, expr, prevRel, "exactCardinality")
+                }
+            }
 
             case _ =>  throw new Exception(s"Not parsing Union ($origin) operand $exprType\n$go_class")
         }
@@ -278,8 +350,41 @@ class Parser(var ont_path: String) {
     }
 
     def checkExactCardinality(expr: OWLObjectIntersectionOf) = {
-        val operands = expr.getOperands
-        None
+        val operands = expr.getOperands.asScala.toList
+
+        lazy val length_2 = operands.length == 2
+        lazy val fst :: snd :: xs = operands
+
+        lazy val fst_type = fst.getClassExpressionType.getName
+        lazy val snd_type = snd.getClassExpressionType.getName
+
+        
+
+        if (length_2) {
+            if (fst_type == "ObjectMinCardinality" && snd_type == "ObjectMaxCardinality") {
+                val fst_card = fst.asInstanceOf[OWLObjectMinCardinality].getCardinality
+                val snd_card = snd.asInstanceOf[OWLObjectMaxCardinality].getCardinality
+                
+                (fst_card == snd_card) match {
+                    case true => Some(fst)
+                    case false => None
+                }
+            }else if (fst_type == "ObjectMaxCardinality" && snd_type == "ObjectMinCardinality") {
+                val fst_card = fst.asInstanceOf[OWLObjectMaxCardinality].getCardinality
+                val snd_card = snd.asInstanceOf[OWLObjectMinCardinality].getCardinality
+                
+                (fst_card == snd_card) match {
+                    case true => Some(snd)
+                    case false => None
+                }
+            }else{
+                None
+            }
+
+        }else{
+            None
+        }
+
     }
 
     ///////////////////////////////////////
