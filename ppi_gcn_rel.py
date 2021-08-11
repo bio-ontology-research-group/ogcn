@@ -68,12 +68,12 @@ def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file,
 def load_data(train_inter_file, test_inter_file):
     train_df, test_df = load_ppi_data(train_inter_file, test_inter_file)
     
-    split = int(len(train_df) * 0.8)
-    index = np.arange(len(train_df))
-    val_df = train_df.iloc[index[split:]]
-    train_df = train_df.iloc[index[:split]]
+    # split = int(len(train_df) * 0.8)
+    # index = np.arange(len(train_df))
+    # val_df = train_df.iloc[index[split:]]
+    # train_df = train_df.iloc[index[:split]]
 
-    return train_df, val_df, test_df
+    return train_df, test_df
 
 def train(n_hid, dropout, lr, num_bases, batch_size, epochs, data_file, train_inter_file, test_inter_file, checkpoint_dir = None, tuning= False):
 
@@ -89,7 +89,7 @@ def train(n_hid, dropout, lr, num_bases, batch_size, epochs, data_file, train_in
     feat_dim = 2
     loss_func = nn.BCELoss()
 
-    train_df, val_df, _ = load_data(train_inter_file, test_inter_file)
+    train_df, val_df = load_data(train_inter_file, test_inter_file)
 
     model = PPIModel(feat_dim, num_rels, num_bases, num_nodes, n_hid, dropout)
 
@@ -191,7 +191,7 @@ def test(n_hid, dropout, batch_size, data_file, train_inter_file, test_inter_fil
     loss_func = nn.BCELoss()
 
 
-    _, _, test_df = load_data(train_inter_file, test_inter_file)
+    _, test_df = load_data(train_inter_file, test_inter_file)
     test_labels = th.FloatTensor(test_df['labels'].values).to(device)
     
     test_data = GraphDataset(g, test_df, test_labels, annots, prot_idx)

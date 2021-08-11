@@ -47,7 +47,6 @@ def train_tune(config, data_file=None, train_inter_file=None, test_inter_file=No
 def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_epochs, gpus_per_trial):
 
     feat_dim = 2
-    num_bases = 15
     num_rels = 19
     num_nodes = 87833
     
@@ -87,7 +86,7 @@ def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_ep
     print("Best trial final validation auc: {}".format(
         best_trial.last_result["auc"]))
 
-    best_trained_model = PPIModel(feat_dim, num_rels, num_bases, num_nodes, best_trial.config["n_hid"], best_trial.config["dropout"])
+    best_trained_model = PPIModel(feat_dim, num_rels, best_trial.config["num_bases"], num_nodes, best_trial.config["n_hid"], best_trial.config["dropout"])
     device = "cpu"
     if th.cuda.is_available():
         device = "cuda:0"
@@ -108,7 +107,7 @@ def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_ep
 
 if __name__ == "__main__":
     # You can change the number of GPUs per trial here:
-    num_samples = 50
+    num_samples = 200
     max_num_epochs = 10
     gpus_per_trial = 1
 
