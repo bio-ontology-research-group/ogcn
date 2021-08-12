@@ -19,18 +19,23 @@ import org.ogcn.parse.Types._
 class Parser(var ont_path: String) {
 
     private val ont_manager = OWLManager.createOWLOntologyManager()
+    println(s"INFO: Start loading ontology")
     private val ontology = ont_manager.loadOntologyFromOntologyDocument(new File(ont_path))
+    println("INFO: Finished loading ontology")
     private val data_factory = ont_manager.getOWLDataFactory()
-
+    println("INFO: Finished creating data factory")
+    
     var rel_counter = 0
 
     def parse = {
            
         val axioms = ontology.getAxioms()
         val imports = Imports.fromBoolean(false)
+
         val go_classes = ontology.getClassesInSignature(imports).asScala.toList
 
 
+        println(s"INFO: Number of GO classes: ${go_classes.length}")
        
         
         val edges = go_classes.foldLeft(List[Edge]()){(acc, x) => acc ::: processGOClass(x)}
@@ -48,6 +53,7 @@ class Parser(var ont_path: String) {
    
     
     def processGOClass(go_class: OWLClass): List[Edge] = {
+        println(go_class)
         val axioms = ontology.getAxioms(go_class).asScala.toList
 
         val edges = axioms.flatMap(parseAxiom(go_class, _: OWLClassAxiom))
@@ -75,7 +81,7 @@ class Parser(var ont_path: String) {
 
 
     /////////////////////////////////////////////
-    def parseEquivClassAxiom(go_class: OWLClass, rightSideExpr: OWLClassExpression) = {
+    def parseEquivClassAxiom(go_class: OWLClass, rightSideExpr: OWLClassExpression, prevRel: Option[String] = None, origin: String = "Not specified"): List[Edge] =  {
         val exprType = rightSideExpr.getClassExpressionType().getName()
 
         exprType match {
@@ -88,6 +94,20 @@ class Parser(var ont_path: String) {
             case "ObjectUnionOf" => {
                 var expr = rightSideExpr.asInstanceOf[OWLObjectUnionOf].getOperands.asScala.toList
                 expr.flatMap(parseUnion(go_class, _: OWLClassExpression))
+            }
+
+            case "ObjectSomeValuesFrom" => {
+                val right_side_class = rightSideExpr.asInstanceOf[OWLObjectSomeValuesFrom]
+                
+                val(rel, dst_class) = parseQuantifiedExpression(Existential(right_side_class)) 
+
+                prevRel match {
+                    case None => parseEquivClassAxiom(go_class, dst_class, Some(rel), "rec equiv OSV") // simple case
+
+                    case Some(r) => parseEquivClassAxiom(go_class, dst_class, Some(r + "_" + rel))
+
+                    case _ => throw new Exception(s"Complex structure in parseEquivClass (ObjectSomeValuesFrom) $origin\n$go_class\n$rightSideExpr")
+                }
             }
             case "Class" => {
                 List()
@@ -204,6 +224,14 @@ class Parser(var ont_path: String) {
                 }
             }
 
+            case "ObjectUnionOf" => {
+                val proj_class = projected_expr.asInstanceOf[OWLObjectIntersectionOf]
+                
+                //throw new Exception(s"Not parsed complex intersection in union: $origin\n$go_class")
+                println(s"PARSING WARNING: Not parsed complex nested union in intersection: $origin\n$go_class")
+                List()
+        
+            }
 
             case _ =>  throw new Exception(s"Not parsing Intersection ($origin) operand $exprType\n$go_class\n$projected_expr")
         }
@@ -292,7 +320,7 @@ class Parser(var ont_path: String) {
                 exactCardinality match {
                     case None => {
                         //throw new Exception(s"Not parsed complex intersection in union: $origin\n$go_class")
-                        println(s"PARSING WARNING: Not parsed complex intersection in union: $origin\n$go_class")
+                        println(s"PARSING WARNING: Not parsed nested intersection in union: $origin\n$go_class")
                         List()
                     }
                     case Some(expr) => parseUnion(go_class, expr, prevRel, "exactCardinality")
