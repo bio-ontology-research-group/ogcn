@@ -53,7 +53,6 @@ class Parser(var ont_path: String) {
    
     
     def processGOClass(go_class: OWLClass): List[Edge] = {
-        println(go_class)
         val axioms = ontology.getAxioms(go_class).asScala.toList
 
         val edges = axioms.flatMap(parseAxiom(go_class, _: OWLClassAxiom))
@@ -225,7 +224,7 @@ class Parser(var ont_path: String) {
             }
 
             case "ObjectUnionOf" => {
-                val proj_class = projected_expr.asInstanceOf[OWLObjectIntersectionOf]
+                val proj_class = projected_expr.asInstanceOf[OWLObjectUnionOf]
                 
                 //throw new Exception(s"Not parsed complex intersection in union: $origin\n$go_class")
                 println(s"PARSING WARNING: Not parsed complex nested union in intersection: $origin\n$go_class")

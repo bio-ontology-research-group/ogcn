@@ -5,7 +5,7 @@ import logging
 
 import dgl
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(filename='../data/tmp.txt', filemode = 'w', level=logging.DEBUG)
 
 #JPype imports
 import jpype
@@ -26,7 +26,7 @@ def main():
     logging.info(f"Top: {Types.goClassToStr(Types.Top())}")
     logging.info(f"Top: {Types.goClassToStr(Types.Bottom())}")
 
-    parser = Parser("../data/go.owl")
+    parser = Parser("../data/phenomenet.owl")
 
     edges = parser.parse()
 
@@ -37,7 +37,7 @@ def main():
 
     node_idx = {v: k for k, v in enumerate(nodes)}
     logging.info(f"Top: {node_idx['owl#Thing']}")
-    logging.info(f"Top: {node_idx['owl#Nothing']}")
+#    logging.info(f"Top: {node_idx['owl#Nothing']}")
 
     logging.info(f"Number of edges: {len(edges)}")
 
@@ -69,12 +69,12 @@ def main():
 
     graph = dgl.heterograph(graph)
 
-    dgl.save_graphs("../data/go_cat3.bin", graph)
+    dgl.save_graphs("../data/phenoOnt.bin", graph)
 
 
     logging.debug(f"Type of node_idx: {type(node_idx)}")
    
-    with open("../data/nodes_cat3.pkl", "wb") as pkl_file:
+    with open("../data/nodes_phenoOnt.pkl", "wb") as pkl_file:
         pkl.dump(node_idx, pkl_file)
 
 
