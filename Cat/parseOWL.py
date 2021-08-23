@@ -5,7 +5,7 @@ import logging
 
 import dgl
 
-logging.basicConfig(filename='../data/tmp.txt', filemode = 'w', level=logging.DEBUG)
+logging.basicConfig(filename='../data/logtmp.txt', filemode = 'w', level=logging.DEBUG)
 
 #JPype imports
 import jpype
