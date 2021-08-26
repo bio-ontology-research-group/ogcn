@@ -23,7 +23,7 @@ public class Main {
 
     public static void main(String[] args) {
 
-		Parser p = new Parser("/home/zhapacfp/Github/ogcn/data/phenomenet.owl");
+	SimpleParser p = new SimpleParser("../data/go.owl", true, false);
 		p.parse();
 
 		Main main = new Main();

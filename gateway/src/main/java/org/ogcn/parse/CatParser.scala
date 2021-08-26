@@ -16,7 +16,7 @@ import collection.JavaConverters._
 import org.ogcn.parse.Types._
 
 
-class Parser(var ont_path: String) {
+class CatParser(var ont_path: String) {
 
     private val ont_manager = OWLManager.createOWLOntologyManager()
     println(s"INFO: Start loading ontology")
