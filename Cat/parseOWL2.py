@@ -26,7 +26,7 @@ def main():
     logging.info(f"Top: {Types.goClassToStr(Types.Top())}")
     logging.info(f"Top: {Types.goClassToStr(Types.Bottom())}")
 
-    parser = Parser("../data/go.owl")
+    parser = Parser("../data/go-plus.owl")
 
     edges = parser.parse()
 
