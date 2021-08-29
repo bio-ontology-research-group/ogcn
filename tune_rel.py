@@ -32,10 +32,11 @@ def main(num_samples, max_num_epochs, gpus_per_trial):
         "graph_file": curr_path + '/data/go_subclass.bin',
         "nodes_file": curr_path + '/data/go_subclass.pkl'
     }
-    
-    tuning(file_params, num_samples, max_num_epochs, gpus_per_trial)
 
-def train_tune(config, file_params, checkpoint_dir = None):
+    feat_dim = 2
+    tuning(file_params, num_samples, max_num_epochs, gpus_per_trial, feat_dim)
+
+def train_tune(config, file_params=None, checkpoint_dir = None):
     batch_size = config["batch_size"]
     n_hid = config["n_hid"]
     dropout = config["dropout"]
@@ -43,21 +44,24 @@ def train_tune(config, file_params, checkpoint_dir = None):
     num_bases = config["num_bases"]
 
 
-    epochs = 1
+    epochs = 32
     train(n_hid, dropout, lr, num_bases, batch_size, epochs, file_params, tuning = True)
 
 
-def tuning(file_params, num_samples, max_num_epochs, gpus_per_trial):
+def tuning(file_params, num_samples, max_num_epochs, gpus_per_trial, feat_dim):
 
     data_file = file_params["data_file"]
     train_inter_file = file_params["train_inter_file"]
     test_inter_file = file_params["test_inter_file"]
+
+
+    g, _, _ = load_graph_data(file_params)
+    num_rels = len(g.canonical_etypes)
+    g = dgl.to_homogeneous(g)
+    num_nodes = g.number_of_nodes()
+
     
-    feat_dim = 2
-    num_rels = 1
-    num_nodes = 50653
-    
-    load_data(file_params)
+    #load_data(file_params)
     
     config = {
         "n_hid": tune.choice([1, 2, 3]),
@@ -77,9 +81,7 @@ def tuning(file_params, num_samples, max_num_epochs, gpus_per_trial):
         metric_columns=["loss", "auc"])
     result = tune.run(
         tune.with_parameters(train_tune,
-                                file_params,
-                                train_inter_file = train_inter_file, 
-                                test_inter_file = test_inter_file),
+                                file_params=file_params),
         resources_per_trial={"cpu": gpus_per_trial, "gpu": gpus_per_trial},
         config=config,
         num_samples=num_samples,
@@ -114,7 +116,7 @@ def tuning(file_params, num_samples, max_num_epochs, gpus_per_trial):
 
 if __name__ == "__main__":
     # You can change the number of GPUs per trial here:
-    num_samples = 1
+    num_samples = 100
     max_num_epochs = 10
     gpus_per_trial = 1
 

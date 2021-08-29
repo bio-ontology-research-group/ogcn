@@ -136,7 +136,6 @@ def train(n_hid, dropout, lr, num_bases, batch_size, epochs, file_params, checkp
     
     best_roc_auc = 0
 
-    epochs = 2
     for epoch in range(epochs):
         epoch_loss = 0
         model.train()
@@ -335,7 +334,7 @@ def load_ppi_data(file_params):
     index = np.arange(len(train_df))
     np.random.seed(seed=0)
     np.random.shuffle(index)
-    train_df = train_df.iloc[index[:1000]]
+    train_df = train_df.iloc[index[:10000]]
     
     test_df = pd.read_pickle(file_params["test_inter_file"])
     index = np.arange(len(test_df))
