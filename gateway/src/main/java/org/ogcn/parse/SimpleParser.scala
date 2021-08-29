@@ -60,11 +60,7 @@ class SimpleParser(var ont_path: String, var subclass: Boolean = true, var relat
     def parseAxiom(go_class: OWLClass, axiom: OWLClassAxiom): List[Option[Edge]] = {
         val axiomType = axiom.getAxiomType().getName()
         axiomType match {
-	    case "EquivalentClasses" => {
-                var ax = axiom.asInstanceOf[OWLEquivalentClassesAxiom].getClassExpressionsAsList.asScala.toList
-                ax.filter(_ != go_class).map(parseEquivClassAxiom(go_class, _: OWLClassExpression))
-            }
-            case "SubClassOf" => {
+	    case "SubClassOf" => {
 	       var ax = axiom.asInstanceOf[OWLSubClassOfAxiom]
 	       parseSubClassAxiom(ax.getSubClass.asInstanceOf[OWLClass], ax.getSuperClass) :: Nil
 	    
@@ -72,39 +68,6 @@ class SimpleParser(var ont_path: String, var subclass: Boolean = true, var relat
 
 	    case _ => Nil
 	}
-    }
-
-
-    /////////////////////////////////////////////
-    def parseEquivClassAxiom(go_class: OWLClass, rightSideExpr: OWLClassExpression): Option[Edge] =  {
-
-	val exprType = rightSideExpr.getClassExpressionType().getName()
-
-        exprType match {
-            case "ObjectSomeValuesFrom" => {
-		if (relations) {
-		    val right_side_class = rightSideExpr.asInstanceOf[OWLObjectSomeValuesFrom]
-                
-		    val (rel, dst_class) = parseQuantifiedExpression(Existential(right_side_class)) 
-
-		    val dst_type = dst_class.getClassExpressionType().getName()
-		    
-		    dst_type match {
-			case "Class" => {
-			     val dst = dst_class.asInstanceOf[OWLClass]
-			     Some (new Edge(go_class, rel, dst))
-			     
-			}
-			case _ => None
-		    }
-		}else{
-		    None
-		}
-               
-            }
-            case _ =>  None
-        }
-
     }
 
 

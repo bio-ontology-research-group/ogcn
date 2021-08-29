@@ -1,6 +1,5 @@
 import click as ck
 import pandas as pd
-from ont import Ontology
 import dgl
 from dgl import nn as dglnn
 import torch as th
@@ -18,6 +17,7 @@ from dgl.nn import GraphConv, AvgPooling, MaxPooling
 import random
 from ray import tune
 
+from ont import Ontology
 
 import logging
 #logging.basicConfig(level=logging.DEBUG)
@@ -70,14 +70,15 @@ def main(train_inter_file, test_inter_file, data_file, graph_file, nodes_file, d
     n_hid = 1
     dropout = 0.1
     lr = 0.003928523779653357
-
-    train(n_hid, dropout, lr, batch_size, epochs, file_params)
-    test(n_hid, dropout, batch_size, file_params)
+    num_bases = 1
+    
+    train(n_hid, dropout, lr, num_bases, batch_size, epochs, file_params)
+    test(n_hid, dropout, num_bases,  batch_size, file_params)
 
 
     
 
-def load_data():
+def load_data(file_params):
     train_df, test_df = load_ppi_data(file_params)
     
     split = int(len(test_df) * 0.5)
@@ -87,9 +88,9 @@ def load_data():
 
     return train_df, val_df, test_df
 
-def train(n_hid, dropout, lr, num_bases, batch_size, epochs, checkpoint_dir = None, tuning= False):
+def train(n_hid, dropout, lr, num_bases, batch_size, epochs, file_params, checkpoint_dir = None, tuning= False):
 
-    g, annots, prot_idx = load_graph_data()
+    g, annots, prot_idx = load_graph_data(file_params)
     
     print(f"Num nodes: {g.number_of_nodes()}")
     
@@ -97,10 +98,12 @@ def train(n_hid, dropout, lr, num_bases, batch_size, epochs, checkpoint_dir = No
 
     g = dgl.to_homogeneous(g)
 
+    num_nodes = g.number_of_nodes()
+    
     feat_dim = 2
     loss_func = nn.BCELoss()
 
-    train_df, val_df, _ = load_data()
+    train_df, val_df, _ = load_data(file_params)
 
     model = PPIModel(feat_dim, num_rels, num_bases, num_nodes, n_hid, dropout)
 
@@ -132,6 +135,8 @@ def train(n_hid, dropout, lr, num_bases, batch_size, epochs, checkpoint_dir = No
     val_set_batches = get_batches(val_data, batch_size)
     
     best_roc_auc = 0
+
+    epochs = 2
     for epoch in range(epochs):
         epoch_loss = 0
         model.train()
@@ -183,7 +188,7 @@ def train(n_hid, dropout, lr, num_bases, batch_size, epochs, checkpoint_dir = No
     print("Finished Training")
 
 
-def test(n_hid, dropout, batch_size, model=None, num_bases = -1):
+def test(n_hid, dropout, num_bases, batch_size, file_params, model=None):
 
     device = "cpu"
     g, annots, prot_idx = load_graph_data(file_params)
@@ -330,7 +335,7 @@ def load_ppi_data(file_params):
     index = np.arange(len(train_df))
     np.random.seed(seed=0)
     np.random.shuffle(index)
-    train_df = train_df.iloc[index[:10000]]
+    train_df = train_df.iloc[index[:1000]]
     
     test_df = pd.read_pickle(file_params["test_inter_file"])
     index = np.arange(len(test_df))
@@ -339,7 +344,7 @@ def load_ppi_data(file_params):
     test_df = test_df.iloc[index[:2000]]
     return train_df, test_df
 
-def load_graph_data(subclass, relations, file_params):
+def load_graph_data(file_params):
     graph_file = file_params["graph_file"]
     nodes_file = file_params["nodes_file"]
     data_file = file_params["data_file"]

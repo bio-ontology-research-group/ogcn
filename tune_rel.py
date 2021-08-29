@@ -25,14 +25,17 @@ curr_path = os.path.dirname(os.path.abspath(__file__))
 def main(num_samples, max_num_epochs, gpus_per_trial):
     
     #global g, annots
-
-    data_file = curr_path + '/data/swissprot.pkl'
-    train_inter_file = curr_path + '/data/4932.train_interactions.pkl'
-    test_inter_file = curr_path + '/data/4932.test_interactions.pkl'
+    file_params = {
+        "data_file": curr_path + '/data/swissprot.pkl',
+        "train_inter_file": curr_path + '/data/4932.train_interactions.pkl',
+        "test_inter_file": curr_path + '/data/4932.test_interactions.pkl',
+        "graph_file": curr_path + '/data/go_subclass.bin',
+        "nodes_file": curr_path + '/data/go_subclass.pkl'
+    }
     
-    tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_epochs, gpus_per_trial)
+    tuning(file_params, num_samples, max_num_epochs, gpus_per_trial)
 
-def train_tune(config, data_file=None, train_inter_file=None, test_inter_file=None, checkpoint_dir = None):
+def train_tune(config, file_params, checkpoint_dir = None):
     batch_size = config["batch_size"]
     n_hid = config["n_hid"]
     dropout = config["dropout"]
@@ -41,16 +44,20 @@ def train_tune(config, data_file=None, train_inter_file=None, test_inter_file=No
 
 
     epochs = 1
-    train(n_hid, dropout, lr, num_bases, batch_size, epochs, data_file, train_inter_file, test_inter_file, tuning = True)
+    train(n_hid, dropout, lr, num_bases, batch_size, epochs, file_params, tuning = True)
 
 
-def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_epochs, gpus_per_trial):
+def tuning(file_params, num_samples, max_num_epochs, gpus_per_trial):
 
+    data_file = file_params["data_file"]
+    train_inter_file = file_params["train_inter_file"]
+    test_inter_file = file_params["test_inter_file"]
+    
     feat_dim = 2
     num_rels = 1
     num_nodes = 50653
     
-    load_data(train_inter_file, test_inter_file)
+    load_data(file_params)
     
     config = {
         "n_hid": tune.choice([1, 2, 3]),
@@ -69,8 +76,8 @@ def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_ep
         # parameter_columns=["l1", "l2", "lr", "batch_size"],
         metric_columns=["loss", "auc"])
     result = tune.run(
-        tune.with_parameters(train_tune, 
-                                data_file=data_file, 
+        tune.with_parameters(train_tune,
+                                file_params,
                                 train_inter_file = train_inter_file, 
                                 test_inter_file = test_inter_file),
         resources_per_trial={"cpu": gpus_per_trial, "gpu": gpus_per_trial},
@@ -99,7 +106,7 @@ def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_ep
         best_checkpoint_dir, "checkpoint"))
     best_trained_model.load_state_dict(model_state)
 
-    test_loss, test_auc = test(best_trial.config["n_hid"], best_trial.config["dropout"], best_trial.config["batch_size"], data_file, train_inter_file, test_inter_file, model = best_trained_model)
+    test_loss, test_auc = test(best_trial.config["n_hid"], best_trial.config["dropout"], best_trial.config["num_bases"], best_trial.config["batch_size"], file_params, model = best_trained_model)
     print("Best trial test set loss: {}".format(test_loss))
     print("Best trial test set auc: {}".format(test_auc))
    
