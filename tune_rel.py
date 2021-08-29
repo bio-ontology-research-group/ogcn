@@ -40,15 +40,15 @@ def train_tune(config, data_file=None, train_inter_file=None, test_inter_file=No
     num_bases = config["num_bases"]
 
 
-    epochs = 32
+    epochs = 1
     train(n_hid, dropout, lr, num_bases, batch_size, epochs, data_file, train_inter_file, test_inter_file, tuning = True)
 
 
 def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_epochs, gpus_per_trial):
 
     feat_dim = 2
-    num_rels = 763
-    num_nodes = 151087
+    num_rels = 1
+    num_nodes = 50653
     
     load_data(train_inter_file, test_inter_file)
     
@@ -57,7 +57,7 @@ def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_ep
         "dropout": tune.choice([x/10 for x in range(1,9)]),
         "lr": tune.loguniform(1e-4, 1e-1),
         "batch_size": tune.choice([8, 16, 32]),
-        "num_bases": tune.choice([25,50,100,200,500,700])
+        "num_bases": tune.choice([1])
     }
     scheduler = ASHAScheduler(
         metric="auc",
@@ -107,7 +107,7 @@ def tuning(data_file, train_inter_file, test_inter_file, num_samples, max_num_ep
 
 if __name__ == "__main__":
     # You can change the number of GPUs per trial here:
-    num_samples = 100
+    num_samples = 1
     max_num_epochs = 10
     gpus_per_trial = 1
 

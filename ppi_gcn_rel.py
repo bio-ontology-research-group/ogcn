@@ -53,33 +53,44 @@ curr_path = os.path.dirname(os.path.abspath(__file__))
     help='Training epochs')
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
-def main(train_inter_file, test_inter_file, data_file, deepgo_model, model_file, batch_size, epochs, load):
+@ck.option(
+    '--graph-file', '-g', help='DGL graph file in .bin format')
+@ck.option(
+    '--nodes-file', '-n', help="Node indices file in .pkl format")
+def main(train_inter_file, test_inter_file, data_file, graph_file, nodes_file, deepgo_model, model_file, batch_size, epochs, load):
+
+    file_params = {
+        "train_inter_file": train_inter_file,
+        "test_inter_file": test_inter_file,
+        "data_file": data_file,
+        "graph_file": graph_file,
+        "nodes_file": nodes_file
+    }
 
     n_hid = 1
     dropout = 0.1
     lr = 0.003928523779653357
 
-    train(n_hid, dropout, lr, batch_size, epochs, data_file, train_inter_file, test_inter_file)
-    test(n_hid, dropout, batch_size, data_file, train_inter_file, test_inter_file)
+    train(n_hid, dropout, lr, batch_size, epochs, file_params)
+    test(n_hid, dropout, batch_size, file_params)
 
 
     
 
-def load_data(train_inter_file, test_inter_file):
-    train_df, test_df = load_ppi_data(train_inter_file, test_inter_file)
+def load_data():
+    train_df, test_df = load_ppi_data(file_params)
     
-    # split = int(len(train_df) * 0.8)
-    # index = np.arange(len(train_df))
-    # val_df = train_df.iloc[index[split:]]
-    # train_df = train_df.iloc[index[:split]]
+    split = int(len(test_df) * 0.5)
+    index = np.arange(len(test_df))
+    val_df = test_df.iloc[index[split:]]
+    test_df = test_df.iloc[index[:split]]
 
-    return train_df, test_df
+    return train_df, val_df, test_df
 
-def train(n_hid, dropout, lr, num_bases, batch_size, epochs, data_file, train_inter_file, test_inter_file, checkpoint_dir = None, tuning= False):
+def train(n_hid, dropout, lr, num_bases, batch_size, epochs, checkpoint_dir = None, tuning= False):
 
-    g, annots, prot_idx = load_graph_data(data_file)
+    g, annots, prot_idx = load_graph_data()
     
-    num_nodes = g.number_of_nodes()
     print(f"Num nodes: {g.number_of_nodes()}")
     
     num_rels = len(g.canonical_etypes)
@@ -89,7 +100,7 @@ def train(n_hid, dropout, lr, num_bases, batch_size, epochs, data_file, train_in
     feat_dim = 2
     loss_func = nn.BCELoss()
 
-    train_df, val_df = load_data(train_inter_file, test_inter_file)
+    train_df, val_df, _ = load_data()
 
     model = PPIModel(feat_dim, num_rels, num_bases, num_nodes, n_hid, dropout)
 
@@ -168,14 +179,14 @@ def train(n_hid, dropout, lr, num_bases, batch_size, epochs, data_file, train_in
                 path = os.path.join(checkpoint_dir, "checkpoint")
                 th.save((model.state_dict(), optimizer.state_dict()), path)
 
-        tune.report(loss=(val_loss), auc=roc_auc)
+            tune.report(loss=(val_loss), auc=roc_auc)
     print("Finished Training")
 
 
-def test(n_hid, dropout, batch_size, data_file, train_inter_file, test_inter_file, model=None):
+def test(n_hid, dropout, batch_size, model=None, num_bases = -1):
 
     device = "cpu"
-    g, annots, prot_idx = load_graph_data(data_file)
+    g, annots, prot_idx = load_graph_data(file_params)
     
     num_nodes = g.number_of_nodes()
     print(f"Num nodes: {g.number_of_nodes()}")
@@ -185,13 +196,11 @@ def test(n_hid, dropout, batch_size, data_file, train_inter_file, test_inter_fil
 
     g = dgl.to_homogeneous(g)
 
-
-    num_bases = 7
     feat_dim = 2
     loss_func = nn.BCELoss()
 
 
-    _, test_df = load_data(train_inter_file, test_inter_file)
+    _,_, test_df = load_data(file_params)
     test_labels = th.FloatTensor(test_df['labels'].values).to(device)
     
     test_data = GraphDataset(g, test_df, test_labels, annots, prot_idx)
@@ -283,8 +292,6 @@ class PPIModel(nn.Module):
 
         x = self.rgcn(g, features, edge_type, None)
 
-        #x = th.cat([self.avgpool(g, x), self.maxpool(g, x)], dim=-1)
-
         x = th.flatten(x).view(-1, self.num_nodes*self.h_dim)
         return th.sigmoid(self.fc(x))
         
@@ -318,36 +325,35 @@ class GraphDataset(IterableDataset):
         return len(self.df)
 
 
-def load_ppi_data(train_inter_file, test_inter_file):
-    train_df = pd.read_pickle(train_inter_file)
+def load_ppi_data(file_params):
+    train_df = pd.read_pickle(file_params["train_inter_file"])
     index = np.arange(len(train_df))
     np.random.seed(seed=0)
     np.random.shuffle(index)
     train_df = train_df.iloc[index[:10000]]
     
-    test_df = pd.read_pickle(test_inter_file)
+    test_df = pd.read_pickle(file_params["test_inter_file"])
     index = np.arange(len(test_df))
     np.random.seed(seed=0)
     np.random.shuffle(index)
-    test_df = test_df.iloc[index[:1000]]
+    test_df = test_df.iloc[index[:2000]]
     return train_df, test_df
 
-def load_graph_data(data_file):
-    # go = Ontology('data/go.obo', rels, with_disjoint, with_intersection, inverse)
-    # nodes = list(go.ont.keys())
-    # node_idx = {v: k for k, v in enumerate(nodes)}
-   
+def load_graph_data(subclass, relations, file_params):
+    graph_file = file_params["graph_file"]
+    nodes_file = file_params["nodes_file"]
+    data_file = file_params["data_file"]
 
-    # g = go.toDGLGraph()
-    
-    graphs, data_dict = dgl.load_graphs(curr_path + '/data/go_cat3.bin')
+    graphs, data_dict = dgl.load_graphs(graph_file)
     g = graphs[0]
 
     num_nodes = g.number_of_nodes()
-    
-    with open(curr_path + "/data/nodes_cat3.pkl", "rb") as pkl_file:
+
+    #g = dgl.add_self_loop(g, 'id')
+
+    with open(nodes_file, "rb") as pkl_file:
         node_idx = pkl.load(pkl_file)
-    g = dgl.add_self_loop(g, 'id')
+    
     
     df = pd.read_pickle(data_file)
     df = df[df['orgs'] == '559292']

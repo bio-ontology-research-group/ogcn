@@ -23,6 +23,8 @@ public class Main {
 
     public static void main(String[] args) {
 
+	SimpleParser p = new SimpleParser("../data/go.owl", true, false);
+		p.parse();
 		Main main = new Main();
 		JCommander jcom = JCommander.newBuilder()
 				.addObject(main)

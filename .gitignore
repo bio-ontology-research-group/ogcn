@@ -147,3 +147,5 @@ dmypy.json
 gateway/build/
 gateway/.gradle
 .gradle/
+
+.metals/
