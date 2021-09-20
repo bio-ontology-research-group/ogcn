@@ -10,14 +10,14 @@ from torch.nn import functional as F
 from torch import optim
 from sklearn.metrics import roc_curve, auc, matthews_corrcoef
 
-
+ORG_ID = '4932'
 
 @ck.command()
 @ck.option(
-    '--test-inter-file', '-tsif', default='data/4932.test_interactions.pkl',
-    help='Interactions file (deepint_data.py)')
+    '--test-inter-file', '-tsif', default=f'data/{ORG_ID}.test_interactions.pkl',
+    help='Interactions file (data.py)')
 @ck.option(
-    '--predictions-file', '-pf', default='data/4932.similarity.tsv',
+    '--predictions-file', '-pf', default=f'data/{ORG_ID}.similarity.tsv',
     help='Predictions file with scores')
 def main(test_inter_file, predictions_file):
     test_df = pd.read_pickle(test_inter_file)

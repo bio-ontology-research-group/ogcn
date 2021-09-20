@@ -9,7 +9,7 @@ import time
 from collections import deque
 import torch as th
 import dgl
-from dgl.nn import GraphConv
+from dgl.nn import GraphConv, RelGraphConv
 import torch.nn.functional as F
 from torch import nn
 import os
@@ -75,10 +75,10 @@ class HPOLayer(object):
     '--fold', '-f', default=1,
     help='Fold index')
 @ck.option(
-    '--batch-size', '-bs', default=4,
+    '--batch-size', '-bs', default=5,
     help='Batch size')
 @ck.option(
-    '--epochs', '-e', default=1024,
+    '--epochs', '-e', default=24,
     help='Training epochs')
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
@@ -111,30 +111,33 @@ def main(hp_file, data_file, terms_file, gos_file, model_file,
     term_set = set(terms)
     terms_dict = {v: i for i, v in enumerate(terms)}
     print('Loading data')
-    g, features, labels, train_nids, test_nids, test_df = load_data(data_file, terms_dict, gos_dict, fold)
+    ppi_g, go_g, go_etypes, features, labels, train_nids, test_nids, test_df = load_data(data_file, terms_dict, gos_dict, fold)
     net = Net(len(gos), len(terms)).to(device)
     # g, features, labels, train_nids, test_nids = g.to(device), features.to(device), labels.to(device), train_nids.to(device), test_nids.to(device)
-    features, labels = features.to(device), labels.to(device)
+    print(ppi_g, go_g)
+    labels = labels.to(device)
+    features = features.to(device)
+    go_etypes = go_etypes.to(device)
     print(net)
-    sampler = dgl.dataloading.MultiLayerFullNeighborSampler(2)
+    sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
     dataloader = dgl.dataloading.NodeDataLoader(
-        g, train_nids, sampler,
-        batch_size=4,
+        ppi_g, train_nids, sampler,
+        batch_size=batch_size,
         shuffle=True,
-        drop_last=True,
+        drop_last=False,
         num_workers=4,
         device=device
     )
 
     test_dataloader = dgl.dataloading.NodeDataLoader(
-        g, test_nids, sampler,
-        batch_size=4,
-        shuffle=True,
-        drop_last=True,
+        ppi_g, test_nids, sampler,
+        batch_size=batch_size,
+        shuffle=False,
+        drop_last=False,
         num_workers=4,
         device=device
     )
-    optimizer = th.optim.Adam(net.parameters(), lr=1e-2)
+    optimizer = th.optim.Adam(net.parameters(), lr=1e-3)
     best_loss = 10000.0
     if not load:
         print('Training the model')
@@ -145,8 +148,9 @@ def main(hp_file, data_file, terms_file, gos_file, model_file,
             with ck.progressbar(length=train_steps) as bar:
                 for input_nodes, output_nodes, blocks in dataloader:
                     bar.update(1)
-                    # blocks = [b.to(th.device(device)) for b in blocks]
-                    logits = net(blocks, features[input_nodes])
+                    batch_go_g = dgl.batch([go_g] * len(input_nodes)).to(device)
+                    batch_etypes = th.cat([go_etypes] * len(input_nodes)).to(device)
+                    logits = net(batch_go_g, batch_etypes, blocks, features[input_nodes])
                     loss = F.binary_cross_entropy(logits, labels[output_nodes])
                     optimizer.zero_grad()
                     loss.backward()
@@ -156,15 +160,23 @@ def main(hp_file, data_file, terms_file, gos_file, model_file,
             train_loss /= train_steps
             net.eval()
             with th.no_grad():
+                _loss = 0
+                test_steps = int(math.ceil(len(test_nids) / batch_size))
                 test_loss = 0
-                test_steps = len(test_nids)
+                preds = []
                 for input_nodes, output_nodes, blocks in test_dataloader:
-                    # blocks = [b.to(th.device(device)) for b in blocks]
-                    logits = net(blocks, features[input_nodes])
+                    batch_go_g = dgl.batch([go_g] * len(input_nodes)).to(device)
+                    batch_etypes = th.cat([go_etypes] * len(input_nodes)).to(device)
+                    logits = net(batch_go_g, batch_etypes, blocks, features[input_nodes])
                     batch_loss = F.binary_cross_entropy(logits, labels[output_nodes])
                     test_loss += batch_loss.detach().item()
+                    preds = np.append(preds, logits.detach().cpu().numpy())
                 test_loss /= test_steps
-                print(f"Epoch {epoch} | Loss {train_loss:.4f} | Test Loss {test_loss:.4f}")
+                valid_labels = labels[test_nids].detach().cpu().numpy()
+                roc_auc = compute_roc(valid_labels, preds)
+                fmax = compute_fmax(valid_labels, preds.reshape(len(test_nids), len(terms)))
+                print(f'Epoch {epoch}: Loss - {train_loss}, Valid loss - {test_loss}, AUC - {roc_auc}, Fmax - {fmax}')
+
                 if test_loss < best_loss:
                     best_loss = test_loss
                     print('Saving model')
@@ -173,31 +185,52 @@ def main(hp_file, data_file, terms_file, gos_file, model_file,
     # Loading best model
     print('Loading the best model')
     net.load_state_dict(th.load(model_file))
-    predictions = net(g, features)[test_mask]
-    labels = labels[test_mask]
+    net.eval()
+    with th.no_grad():
+        test_steps = int(math.ceil(len(test_nids) / batch_size))
+        test_loss = 0
+        preds = []
+        for input_nodes, output_nodes, blocks in test_dataloader:
+            batch_go_g = dgl.batch([go_g] * len(input_nodes)).to(device)
+            batch_etypes = th.cat([go_etypes] * len(input_nodes)).to(device)
+            logits = net(batch_go_g, batch_etypes, blocks, features[input_nodes])
+            batch_loss = F.binary_cross_entropy(logits, labels[output_nodes])
+            test_loss += batch_loss.detach().item()
+            preds = np.append(preds, logits.detach().cpu().numpy())
+        test_loss /= test_steps
+        preds = preds.reshape(len(test_nids), len(terms))
+        valid_labels = labels[test_nids].detach().cpu().numpy()
+        roc_auc = compute_roc(valid_labels, preds)
+        fmax = compute_fmax(valid_labels, preds)
+        print(f'Test Loss - {test_loss}, AUC - {roc_auc}, Fmax - {fmax}')
 
-    roc_auc = compute_roc(
-        labels.cpu().detach().numpy(), predictions.cpu().detach().numpy())
-    print('ROC AUC', roc_auc)
-    predictions = predictions.cpu().detach().numpy()
-    print(predictions.shape)
-    test_df['preds'] = list(predictions)
+    test_df['preds'] = list(preds)
 
     test_df.to_pickle(out_file)
     
         
 class Net(nn.Module):
 
-    def __init__(self, input_length, nb_classes):
+    def __init__(self, input_length, nb_classes, hidden_dim=1024):
         super().__init__()
-        self.gcn1 = GraphConv(input_length, 1000)
-        self.gcn2 = GraphConv(1000, nb_classes)
-        # self.fc1 = nn.Linear(input_length, nb_classes)
-
-    def forward(self, blocks, x):
+        self.rgcn0 = RelGraphConv(1, 1, 11)
+        self.fc0 = nn.Linear(input_length, hidden_dim)
+        self.gcn1 = GraphConv(hidden_dim, hidden_dim)
+        # self.gcn2 = GraphConv(hidden_dim, nb_classes)
+        self.fc1 = nn.Linear(hidden_dim, nb_classes)
+        self.dropout = nn.Dropout()
+        
+    def forward(self, go_g, go_etypes, blocks, x):
+        n = x.shape[0]
+        n_gos = x.shape[1]
+        x = th.transpose(x, 0, 1).reshape(n * n_gos, 1)
+        x = self.rgcn0(go_g, x, go_etypes)
+        x = x.view(-1, n)
+        x = th.transpose(x, 0, 1)
+        x = self.dropout(th.relu(self.fc0(x)))
         x = self.gcn1(blocks[0], x)
-        x = self.gcn2(blocks[1], x)
-        x = F.sigmoid(x)
+        # x = self.gcn2(blocks[1], x)
+        x = th.sigmoid(self.fc1(x))
         return x
 
 
@@ -208,40 +241,57 @@ def compute_roc(labels, preds):
 
     return roc_auc
 
+def compute_fmax(labels, preds):
+    fmax = 0.0
+    for t in range(1, 50):
+        threshold = t / 100.0
+        predictions = (preds >= threshold).astype(np.float32)
+        tp = np.sum(labels * predictions, axis=1)
+        fp = np.sum(predictions, axis=1) - tp
+        fn = np.sum(labels, axis=1) - tp
+        p = np.mean(tp / (tp + fp))
+        r = np.mean(tp / (tp + fn))
+        f = 2 * p * r / (p + r)
+        if fmax < f:
+            fmax = f
+            patience = 0
+        else:
+            patience += 1
+            if patience > 10:
+                return fmax
+    return fmax
+
+
 def load_data(data_file, terms_dict, gos_dict, fold=1):
     from dgl import save_graphs, load_graphs
     df = pd.read_pickle(data_file)
     n = len(df)
-    graph_path = data_file + '.bin'
-    if not os.path.exists(graph_path):
-        # Build the PPI graph
-        g = dgl.DGLGraph()
-        g.add_nodes(n)
-        proteins = df['proteins']
-        prot_idx = {v: k for k, v in enumerate(proteins)}
-        features = np.zeros((n, len(gos_dict)), dtype=np.float32)
-        labels = np.zeros((n, len(terms_dict)), dtype=np.float32)
-        # Filter proteins with annotations
-        for i, row in enumerate(df.itertuples()):
-            edges = [prot_idx[p_id] for p_id in row.interactions]
-            if len(edges) > 0:
-                g.add_edges(i, edges)
-            for go_id in row.prop_annotations:
-                if go_id in gos_dict:
-                    features[i, gos_dict[go_id]] = 1
-            if len(row.phenotypes) > 0:
-                for hp_id in row.prop_phenotypes:
-                    if hp_id in terms_dict:
-                        labels[i, terms_dict[hp_id]] = 1
-        features = th.FloatTensor(features)
-        labels = th.FloatTensor(labels)
-        g = dgl.add_self_loop(g)
-        save_graphs(graph_path, g, {'features': features, 'labels': labels})
-    else:
-        gs, data_dict = load_graphs(graph_path)
-        print(gs)
-        g = gs[0]
-        features, labels = data_dict['features'], data_dict['labels']
+    graphs, data_dict = dgl.load_graphs('data/ppi.bin')
+    ppi_g = graphs[0]
+    graphs, data_dict = dgl.load_graphs('data/go.bin')
+    go_g = graphs[0]
+    go_etypes = data_dict['etypes']
+    
+    proteins = df['proteins']
+    prot_idx = {v: k for k, v in enumerate(proteins)}
+    features = np.zeros((n, len(gos_dict)), dtype=np.float32)
+    labels = np.zeros((n, len(terms_dict)), dtype=np.float32)
+    # Filter proteins with annotations
+    for i, row in enumerate(df.itertuples()):
+        # for go_id, score in row.dg_annotations.items():
+        #     if go_id in gos_dict:
+        #         features[i, gos_dict[go_id]] = score
+        for go_id in row.prop_annotations:
+            if go_id in gos_dict:
+                features[i, gos_dict[go_id]] = 1
+        if len(row.phenotypes) > 0:
+            for hp_id in row.prop_phenotypes:
+                if hp_id in terms_dict:
+                    labels[i, terms_dict[hp_id]] = 1
+    features = th.FloatTensor(features)
+    labels = th.FloatTensor(labels)
+    ppi_g = dgl.add_self_loop(ppi_g)
+
 
     index = []
     for i, row in enumerate(df.itertuples()):
@@ -254,18 +304,14 @@ def load_data(data_file, terms_dict, gos_dict, fold=1):
     train_n = int(len(index) * 0.9)
     train_index = index[:train_n]
     test_index = index[train_n:]
-    train_mask = np.zeros(n, dtype=np.bool)
-    train_mask[train_index] = True
 
-    test_mask = np.zeros(n, dtype=np.bool)
-    test_mask[test_index] = True
-
+    test_df = df.iloc[test_index]
+    
     train_index = th.LongTensor(train_index)
     test_index = th.LongTensor(test_index)
     
-    test_df = df.iloc[test_index]
     
-    return g, features, labels, train_index, test_index, test_df
+    return ppi_g, go_g, go_etypes, features, labels, train_index, test_index, test_df
 
 if __name__ == '__main__':
     main()

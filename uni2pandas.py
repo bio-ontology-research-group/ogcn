@@ -13,10 +13,10 @@ ORGS = set(['HUMAN', 'MOUSE', ])
 
 @ck.command()
 @ck.option(
-    '--swissprot-file', '-sf', default='data/uniprot_sprot.dat.gz',
+    '--swissprot-file', '-sf', default='data/uniprot_sprot_2021_03.dat.gz',
     help='UniProt/SwissProt knowledgebase file in text format (archived)')
 @ck.option(
-    '--out-file', '-o', default='data/swissprot_human.pkl',
+    '--out-file', '-o', default='data/swissprot_2021_03.pkl',
     help='Result file with a list of proteins, sequences and annotations')
 def main(swissprot_file, out_file):
     go = Ontology('data/go.obo', with_rels=True)
@@ -38,8 +38,8 @@ def main(swissprot_file, out_file):
         annots = []
         for annot in row.annotations:
             go_id, code = annot.split('|')
-            # if is_exp_code(code):
-            annots.append(go_id)
+            if is_exp_code(code):
+                annots.append(go_id)
         # Ignore proteins without experimental annotations
         if len(annots) == 0:
             continue
@@ -60,14 +60,6 @@ def main(swissprot_file, out_file):
         prop_annotations.append(annots)
     df['prop_annotations'] = prop_annotations
 
-    cafa_target = []
-    for i, row in enumerate(df.itertuples()):
-        if is_cafa_target(row.orgs):
-            cafa_target.append(True)
-        else:
-            cafa_target.append(False)
-    df['cafa_target'] = cafa_target
-    
     df.to_pickle(out_file)
     logging.info('Successfully saved %d proteins' % (len(df),) )
     
@@ -90,7 +82,7 @@ def load_data(swissprot_file):
         for line in f:
             items = line.strip().split('   ')
             if items[0] == 'ID' and len(items) > 1:
-                if prot_id != '' and org == '9606':
+                if prot_id != '':
                     proteins.append(prot_id)
                     accessions.append(prot_ac)
                     sequences.append(seq)
@@ -132,14 +124,13 @@ def load_data(swissprot_file):
                     else:
                         seq += sq
 
-        if org == '9606':
-            proteins.append(prot_id)
-            accessions.append(prot_ac)
-            sequences.append(seq)
-            annotations.append(annots)
-            string_ids.append(strs)
-            orgs.append(org)
-            genes.append(gene_id)
+        proteins.append(prot_id)
+        accessions.append(prot_ac)
+        sequences.append(seq)
+        annotations.append(annots)
+        string_ids.append(strs)
+        orgs.append(org)
+        genes.append(gene_id)
     return proteins, accessions, sequences, annotations, string_ids, orgs, genes
 
 

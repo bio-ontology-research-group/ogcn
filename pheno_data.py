@@ -20,7 +20,7 @@ ORG_ID = '9606'
     '--deepgo-file', '-dgf', default='data/swissprot_human_dg.gz',
     help='DeepGO predictions')
 @ck.option(
-    '--inter-file', '-if', default=f'data/{ORG_ID}.protein.links.detailed.v11.0.txt.gz',
+    '--inter-file', '-if', default=f'data/{ORG_ID}.protein.physical.links.full.v11.0.txt.gz',
     help='Data file with protein sequences')
 @ck.option('--pheno-file', default=f'data/genes_to_phenotype.txt', help='')
 @ck.option(
@@ -59,9 +59,11 @@ def main(data_file, deepgo_file, inter_file, pheno_file, out_file):
             it = line.strip().split()
             p1 = it[0]
             p2 = it[1]
-            score = float(it[6])
-            # Ignore zero experimental score
-            if score == 0:
+            # coex_score = float(it[5])
+            # exp_score = float(it[6])
+            com_score = float(it[9])
+            # Ignore zero experimental score and less than 700 combined
+            if com_score < 700:
                 continue
             # Ignore proteins without sequence info
             if p1 not in st2uni or p2 not in st2uni:
@@ -130,11 +132,10 @@ def main(data_file, deepgo_file, inter_file, pheno_file, out_file):
     for go_id in FUNC_DICT.values():
         del go_cnt[go_id]
 
-    hp_terms = [hp_id for hp_id, cnt in hp_cnt.items() if cnt >= 10]
+    hp_terms = [hp_id for hp_id, cnt in hp_cnt.items()]
     go_terms = [go_id for go_id, cnt in go_cnt.items()]
-    go_terms += list(proteins)
     go_df = pd.DataFrame({'terms': go_terms})
-    go_df.to_csv('data/nodes.csv')
+    go_df.to_csv('data/go_terms.csv')
     hp_df = pd.DataFrame({'terms': hp_terms})
     hp_df.to_csv('data/hp_terms.csv')
 

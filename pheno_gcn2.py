@@ -26,19 +26,19 @@ import rdflib as rdf
     '--terms-file', '-tf', default='data/hp_terms.csv',
     help='Data file with sequences and complete set of annotations')
 @ck.option(
-    '--gos-file', '-gf', default='data/nodes.csv',
+    '--gos-file', '-gf', default='data/go_terms.csv',
     help='DataFrame with list of GO classes (as features)')
 @ck.option(
     '--deepgo-model', '-dm', default='data/deepgoplus.h5',
     help='DeepGOPlus prediction model')
 @ck.option(
-    '--model-file', '-mf', default='data/pheno.model.h5',
+    '--model-file', '-mf', default='data/phenogcn2.th',
     help='Prediction model')
 @ck.option(
-    '--batch-size', '-bs', default=16,
+    '--batch-size', '-bs', default=12,
     help='Batch size for training')
 @ck.option(
-    '--epochs', '-ep', default=32,
+    '--epochs', '-ep', default=64,
     help='Training epochs')
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
@@ -60,7 +60,8 @@ def main(hp_file, data_file, terms_file, gos_file, deepgo_model, model_file, bat
     global term_set
     term_set = set(terms)
     terms_dict = {v: i for i, v in enumerate(terms)}
-    
+    hpo_matrix = get_hpo_matrix(hpo, terms_dict)
+    hpo_matrix = th.FloatTensor(hpo_matrix).to(device)
     g, etypes, annots, labels, train_nids, valid_nids, test_nids = load_graph_data(data_file, gos_dict, terms_dict)
     g = g.to(device)
     etypes = etypes.to(device)
@@ -73,8 +74,9 @@ def main(hp_file, data_file, terms_file, gos_file, deepgo_model, model_file, bat
     model = PhenoModel(len(gos), len(terms))
     model.to(device)
     loss_func = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
 
+    best_loss = 1000000.0
     for epoch in range(epochs):
         epoch_loss = 0
         model.train()
@@ -85,6 +87,8 @@ def main(hp_file, data_file, terms_file, gos_file, deepgo_model, model_file, bat
                 logits = model(batch_g, batch_etypes, batch_feat)
                 
                 loss = loss_func(logits, batch_labels)
+                # hierarchical loss
+                loss += th.sum(th.relu((logits.unsqueeze(2) - logits.unsqueeze(1)) * hpo_matrix))
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -106,11 +110,39 @@ def main(hp_file, data_file, terms_file, gos_file, deepgo_model, model_file, bat
                     valid_loss += loss.detach().cpu()
                     preds = np.append(preds, logits.detach().cpu())
                 valid_loss /= len(valid_nids)
+                if valid_loss < best_loss:
+                    best_loss = valid_loss
+                    print('Saving model')
+                    th.save(model.state_dict(), model_file)
+
 
         valid_labels = labels[valid_nids, :].detach().cpu().numpy()
         roc_auc = compute_roc(valid_labels, preds)
         fmax = compute_fmax(valid_labels, preds.reshape(len(valid_nids), len(terms)))
         print(f'Epoch {epoch}: Loss - {epoch_loss}, Valid loss - {valid_loss}, AUC - {roc_auc}, Fmax - {fmax}')
+
+    # Loading best model
+    print('Loading the best model')
+    model.load_state_dict(th.load(model_file))
+    model.eval()
+
+    test_loss = 0
+    preds = []
+    with th.no_grad():
+        with ck.progressbar(test_nids) as bar:
+            for n_id in bar:
+                feat = annots[n_id, :].view(-1, 1)
+                label = labels[n_id, :].view(1, -1)
+                logits = model(g, etypes, feat)
+                loss = loss_func(logits, label)
+                test_loss += loss.detach().cpu()
+                preds = np.append(preds, logits.detach().cpu())
+            test_loss /= len(test_nids)
+
+        test_labels = labels[test_nids, :].detach().cpu().numpy()
+        roc_auc = compute_roc(test_labels, preds)
+        fmax = compute_fmax(test_labels, preds.reshape(len(test_nids), len(terms)))
+        print(f'Test loss - {test_loss}, AUC - {roc_auc}, Fmax - {fmax}')
 
 def compute_roc(labels, preds):
     # Compute ROC curve and ROC area for each class
@@ -121,22 +153,24 @@ def compute_roc(labels, preds):
 
 def compute_fmax(labels, preds):
     fmax = 0.0
-    for t in range(1, 50):
+    patience = 0
+    for t in range(1, 101):
         threshold = t / 100.0
         predictions = (preds >= threshold).astype(np.float32)
         tp = np.sum(labels * predictions, axis=1)
         fp = np.sum(predictions, axis=1) - tp
         fn = np.sum(labels, axis=1) - tp
+        tp_ind = tp > 0
+        tp = tp[tp_ind]
+        fp = fp[tp_ind]
+        fn = fn[tp_ind]
+        if len(tp) == 0:
+            continue
         p = np.mean(tp / (tp + fp))
-        r = np.mean(tp / (tp + fn))
+        r = np.sum(tp / (tp + fn)) / len(tp_ind)
         f = 2 * p * r / (p + r)
-        if fmax < f:
+        if fmax <= f:
             fmax = f
-            patience = 0
-        else:
-            patience += 1
-            if patience > 10:
-                return fmax
     return fmax
         
 
@@ -174,25 +208,41 @@ def collate(samples):
     return batched_graph, th.cat(etypes, dim=0), th.cat(features, dim=0), th.cat(labels, dim=0)
 
 
+def get_hpo_matrix(hpo, terms_dict):
+    nb_classes = len(terms_dict)
+    res = np.zeros((nb_classes, nb_classes), dtype=np.float32)
+    for hp_id, i in terms_dict.items():
+        subs = hpo.get_term_set(hp_id)
+        res[i, i] = 1
+        for h_id in subs:
+            if h_id in terms_dict:
+                res[terms_dict[h_id], i] = 1
+    return res
+
+
 class PhenoModel(nn.Module):
 
     def __init__(self, nb_gos, nb_classes):
         super().__init__()
         self.gcn1 = dglnn.RelGraphConv(1, 1, 11)
         self.gcn2 = dglnn.RelGraphConv(1, 1, 11)
-        self.gcn3 = dglnn.RelGraphConv(1, 1, 11)
+        # self.gcn3 = dglnn.RelGraphConv(1, 1, 11)
         self.nb_gos = nb_gos
         self.nb_classes = nb_classes
-        self.fc = nn.Linear(nb_gos, nb_classes)
+        self.fc1 = nn.Linear(nb_gos, 1000)
+        self.fc2 = nn.Linear(1000, 1000)
+        # self.out = nn.Linear(nb_gos, nb_classes)
+        self.out = nn.Linear(1000, nb_classes)
         
     def forward(self, g, etypes, features=None):
-        if features is None:
-            features = g.ndata['feat']
-        x = self.gcn1(g, features, etypes)
-        x = self.gcn2(g, x, etypes)
-        # x = features
+        # if features is None:
+        #     features = g.ndata['feat']
+        # x = self.gcn1(g, features, etypes)
+        x = features
         x = th.flatten(x).view(-1, self.nb_gos)
-        return th.sigmoid(self.fc(x))
+        x = th.relu(self.fc1(x))
+        x = th.relu(self.fc2(x))
+        return th.sigmoid(self.out(x))
 
 
 def load_graph_data(data_file, gos_dict, terms_dict):
@@ -212,7 +262,7 @@ def load_graph_data(data_file, gos_dict, terms_dict):
     index = np.arange(len(df))
     np.random.seed(seed=0)
     np.random.shuffle(index)
-    train_n = int(len(df) * .8)
+    train_n = int(len(df) * .9)
     valid_n = int(train_n * .9)
     train_nids = index[:valid_n]
     valid_nids = index[valid_n:train_n]
@@ -224,10 +274,11 @@ def load_graph_data(data_file, gos_dict, terms_dict):
     labels = np.zeros((len(df), len(terms_dict)), dtype=np.float32)
     
     for i, row in enumerate(df.itertuples()):
-        for go_id in row.dg_annotations:
+        for go_id in row.prop_annotations:
             if go_id in gos_dict:
-                annotations[i, gos_dict[go_id]] = row.dg_annotations[go_id]
-        annotations[i, gos_dict[row.proteins]] = 1
+                annotations[i, gos_dict[go_id]] = 1
+        # for p_id in row.interactions:
+        #     annotations[i, gos_dict[p_id]] = 1
         for hp_id in row.prop_phenotypes:
             if hp_id in terms_dict:
                 labels[i, terms_dict[hp_id]] = 1

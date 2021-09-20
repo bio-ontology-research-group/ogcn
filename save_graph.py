@@ -69,7 +69,7 @@ def main():
     normalizedOntology = normalizer.normalize(intAxioms, factory)
     rTranslator = ReverseAxiomTranslator(translator, ontology)
 
-    gos_df = pd.read_csv('data/nodes.csv')
+    gos_df = pd.read_csv('data/go_terms.csv')
     terms = gos_df['terms'].values
     terms_dict = {v:k for k, v in enumerate(terms)}
     relations = {'subclassOf': []}
@@ -100,20 +100,6 @@ def main():
         except Exception as e:
             print(f'Ignoring {ax}', e)
 
-    # Add interactions and has function
-    relations['hasFunction'] = []
-    relations['interacts'] = []
-    df = pd.read_pickle('data/data_human.pkl')
-
-    for i, row in enumerate(df.itertuples()):
-        p_id = terms_dict[row.proteins]
-        for go_id in row.exp_annotations:
-            go_id = terms_dict[row.proteins]
-            relations['hasFunction'].append((p_id, go_id))
-        for p2_id in row.interactions:
-            p2_id = terms_dict[p2_id]
-            relations['interacts'].append((p_id, p2_id))
-
     src = []
     dst = []
     etypes = []
@@ -127,7 +113,23 @@ def main():
     etypes = th.tensor(etypes)
     graph = dgl.graph((src, dst), num_nodes=len(terms))
     dgl.save_graphs('data/go.bin', graph, {'etypes': etypes})
-    print(len(etypes), 'edges')
+    
+
+    df = pd.read_pickle('data/data_human.pkl')
+    proteins = df['proteins']
+    prot_idx = {v: k for k, v in enumerate(proteins)}
+    src = []
+    dst = []
+    for i, row in enumerate(df.itertuples()):
+        p_id = prot_idx[row.proteins]
+        for p2_id in row.interactions:
+            p2_id = prot_idx[p2_id]
+            src.append(p_id)
+            dst.append(p2_id)
+
+    graph = dgl.graph((src, dst), num_nodes=len(proteins))
+    dgl.save_graphs('data/ppi.bin', graph)
+
     
 
 

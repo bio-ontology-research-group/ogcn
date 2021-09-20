@@ -56,7 +56,7 @@ factory.loadNamespacePrefix("GO", graph_uri.toString())
 G graph = new GraphMemory(graph_uri)
 
 // Load OBO file to graph "go.obo"
-GDataConf goConf = new GDataConf(GFormat.OBO, "data/goslim_yeast.obo")
+GDataConf goConf = new GDataConf(GFormat.OBO, "data/go.obo")
 GraphLoaderGeneric.populate(goConf, graph)
 
 // Add virtual root for 3 subontologies__________________________________
@@ -83,16 +83,17 @@ new File(opt.is).splitEachLine('\t') { items ->
 // Load protein annotations
 new File(opt.ia).splitEachLine('\t') { items ->
     protID = items[0]
-    if (proteins.containsKey(protID)) {
-	protURI = factory.getURI("http://" + protID)
-	for (int i = 1; i < items.size(); i++) {
-	    goURI = getURIfromGO(items[i])
-	    if (graph.containsVertex(goURI)) {
-		proteins[protID].add(goURI)
-		// Add annotations to graph
-		Edge e = new Edge(protURI, RDF.TYPE, goURI);
-		graph.addE(e);
-	    }
+    if (!proteins.containsKey(protID)) {
+	proteins[protID] = new HashSet<String>()
+    }
+    protURI = factory.getURI("http://" + protID)
+    for (int i = 1; i < items.size(); i++) {
+	goURI = getURIfromGO(items[i])
+	if (graph.containsVertex(goURI)) {
+	    proteins[protID].add(goURI)
+	    // Add annotations to graph
+	    Edge e = new Edge(protURI, RDF.TYPE, goURI);
+	    graph.addE(e);
 	}
     }
 }
@@ -150,7 +151,6 @@ def c = 0
 
 GParsPool.withPool {
     index.eachParallel { i ->
-	
 	if (proteins[interactions[i][0]].size() > 0 && proteins[interactions[i][1]].size() > 0) {
 	    result[i] = engine.compare(
 		smConfGroupwise,
