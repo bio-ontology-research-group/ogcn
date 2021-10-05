@@ -163,7 +163,6 @@ class PPIModel(nn.Module):
         self.dropout = nn.Dropout()
         
     def forward(self, annots_p1, annots_p2):
-        x = annots_p1, annots_p2
         x1 = self.dropout(self.fc(annots_p1))
         x2 = self.dropout(self.fc(annots_p2))
         x = th.sum(x1 * x2, dim=1, keepdims=True)

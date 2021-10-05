@@ -8,16 +8,16 @@ import numpy as np
 from torch import nn
 from torch.nn import functional as F
 from torch import optim
-from sklearn.metrics import roc_curve, auc, matthews_corrcoef
+from sklearn.metrics import roc_auc_score, matthews_corrcoef
 
-ORG_ID = '4932'
+ORG_ID = '9606'
 
 @ck.command()
 @ck.option(
     '--test-inter-file', '-tsif', default=f'data/{ORG_ID}.test_interactions.pkl',
     help='Interactions file (data.py)')
 @ck.option(
-    '--predictions-file', '-pf', default=f'data/{ORG_ID}.similarity.tsv',
+    '--predictions-file', '-pf', default=f'data/{ORG_ID}.mlp_scores.tsv',
     help='Predictions file with scores')
 def main(test_inter_file, predictions_file):
     test_df = pd.read_pickle(test_inter_file)
@@ -28,7 +28,7 @@ def main(test_inter_file, predictions_file):
             it = line.strip().split('\t')
             preds.append(float(it[2]))
     preds = np.array(preds)
-    roc_auc = compute_roc(labels, preds)
+    roc_auc = roc_auc_score(labels, preds, average='macro')
     print('ROC AUC:', roc_auc)
 
 def compute_roc(labels, preds):
