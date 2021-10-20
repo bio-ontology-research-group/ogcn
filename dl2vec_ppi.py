@@ -82,8 +82,11 @@ def main(train_inter_file, valid_inter_file, test_inter_file,  model_file, out_f
                 for batch_id, (x) in enumerate(train_loader):
                     annots_p1 = Variable(x['p1'].cuda()) 
                     annots_p2 = Variable(x['p2'].cuda())
-                    label = Variable(x['label'].cuda()) 
-
+                    label = Variable(x['label'].cuda())
+                    #annots_p1=annots_p1.view(-1,1) 
+                    #annots_p2=annots_p2.view(-1,1) 
+                    print(annots_p1.shape)
+                    #exit()
                     logits = model(annots_p1, annots_p2)
                     label = label.view(-1,1,1)
                     loss = loss_func(logits, label.to(device))
@@ -105,7 +108,7 @@ def main(train_inter_file, valid_inter_file, test_inter_file,  model_file, out_f
                 with ck.progressbar(valid_loader, show_pos=True) as bar:
                     for batch_id, (x) in enumerate(valid_loader):
                         annots_p1 = Variable(x['p1'].cuda()) 
-                        annots_p2 = Variable(x['p1'].cuda())
+                        annots_p2 = Variable(x['p2'].cuda())
                         label = Variable(x['label'].cuda()) 
                         label = label.view(-1,1,1)   
                         logits = model(annots_p1, annots_p2)
@@ -147,7 +150,7 @@ def main(train_inter_file, valid_inter_file, test_inter_file,  model_file, out_f
         with ck.progressbar(test_loader, show_pos=True) as bar:
             for batch_id, (x) in enumerate(test_loader):
                 annots_p1 = Variable(x['p1'].cuda()) 
-                annots_p2 = Variable(x['p1'].cuda()) 
+                annots_p2 = Variable(x['p2'].cuda()) 
                 label = Variable(x['label'].cuda())
                 label = label.view(-1,1,1)   
                 
@@ -205,7 +208,7 @@ class PPIModel(nn.Module):
         x2 = self.dropout(x2)
         
         x = th.sum(x1 * x2, dim=1, keepdims=True)
-        return th.sigmoid(self.out(x))
+        return th.sigmoid(x)
 
     '''
     def __init__(self, annots_length, hidden_dim=256):
