@@ -62,7 +62,7 @@ def main(train_inter_file, valid_inter_file, test_inter_file,  model_file, out_f
     
     model = PPIModel(100)
     model.to(device)
-    loss_func = nn.BCEWithLogitsLoss()
+    loss_func = nn.BCELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.00001)
     
     train_loader = DataLoader(train, batch_size=batch_size, shuffle=False)
