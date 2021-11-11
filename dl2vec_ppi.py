@@ -125,6 +125,7 @@ def main(train_inter_file, valid_inter_file, test_inter_file,  model_file, out_f
             
             print(f'Epoch {epoch}: Loss - {epoch_loss}, Valid loss - {valid_loss}, AUC - {roc_auc}')
             if valid_loss < best_loss:
+                i = 0
                 best_loss = valid_loss
                 print('Saving model')
                 th.save(model.state_dict(), model_file)
